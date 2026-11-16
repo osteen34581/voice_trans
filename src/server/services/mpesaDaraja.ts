@@ -46,8 +46,35 @@ export interface DarajaConfig {
   webhookSecret: string;
 }
 
+function cleanEnvSecret(raw: string | undefined): string {
+  let trimmed = (raw || '').trim();
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    trimmed = trimmed.slice(1, -1).trim();
+  }
+  if (
+    trimmed === '34' ||
+    /^(my_|your_|placeholder|changeme|replace|example|xxx)/i.test(trimmed)
+  ) {
+    return '';
+  }
+  return trimmed;
+}
+
+function isRealDarajaSecret(val: string, minLength: number): boolean {
+  if (!val || val.length < minLength) return false;
+  if (/^(test_|my_|your_|placeholder|changeme|replace|example|xxx)/i.test(val)) return false;
+  return true;
+}
+
+function isValidShortCode(val: string): boolean {
+  return /^\d{5,8}$/.test(val);
+}
+
 export function getDarajaConfig(): DarajaConfig {
-  const envRaw = (process.env.MPESA_ENVIRONMENT || 'sandbox').trim().toLowerCase();
+  const envRaw = cleanEnvSecret(process.env.MPESA_ENVIRONMENT).toLowerCase();
   const environment = envRaw === 'production' ? 'production' : 'sandbox';
   const baseUrl =
     environment === 'production'
@@ -57,17 +84,32 @@ export function getDarajaConfig(): DarajaConfig {
   return {
     environment,
     baseUrl,
-    consumerKey: (process.env.MPESA_CONSUMER_KEY || '').trim(),
-    consumerSecret: (process.env.MPESA_CONSUMER_SECRET || '').trim(),
-    shortCode: (process.env.MPESA_SHORTCODE || '').trim(),
-    passkey: (process.env.MPESA_PASSKEY || '').trim(),
-    webhookSecret: (process.env.PAYMENT_WEBHOOK_SECRET || '').trim(),
+    consumerKey: cleanEnvSecret(process.env.MPESA_CONSUMER_KEY),
+    consumerSecret: cleanEnvSecret(process.env.MPESA_CONSUMER_SECRET),
+    shortCode: cleanEnvSecret(process.env.MPESA_SHORTCODE),
+    passkey: cleanEnvSecret(process.env.MPESA_PASSKEY),
+    webhookSecret: cleanEnvSecret(process.env.PAYMENT_WEBHOOK_SECRET),
   };
 }
 
-export function isMpesaConfigured(): boolean {
-  const cfg = getDarajaConfig();
-  return Boolean(cfg.consumerKey && cfg.consumerSecret && cfg.shortCode && cfg.passkey);
+export function isMpesaConfigured(cfg: DarajaConfig = getDarajaConfig()): boolean {
+  return (
+    isRealDarajaSecret(cfg.consumerKey, 10) &&
+    isRealDarajaSecret(cfg.consumerSecret, 10) &&
+    isValidShortCode(cfg.shortCode) &&
+    isRealDarajaSecret(cfg.passkey, 16)
+  );
+}
+
+export function getMpesaConfigDiagnostic(cfg: DarajaConfig = getDarajaConfig()): string {
+  const issues: string[] = [];
+  if (!isRealDarajaSecret(cfg.consumerKey, 10)) issues.push('MPESA_CONSUMER_KEY');
+  if (!isRealDarajaSecret(cfg.consumerSecret, 10)) issues.push('MPESA_CONSUMER_SECRET');
+  if (!isValidShortCode(cfg.shortCode)) issues.push('MPESA_SHORTCODE (5-8 digit Paybill/Till)');
+  if (!isRealDarajaSecret(cfg.passkey, 16)) issues.push('MPESA_PASSKEY');
+
+  if (issues.length === 0) return '';
+  return `M-Pesa checkout requires your Safaricom Daraja ${cfg.environment} API credentials in AI Studio Secrets (${issues.join(', ')}). For sandbox testing, set MPESA_SHORTCODE to 174379 and add your Consumer Key, Consumer Secret, and Online Passkey from the Safaricom Developer Portal.`;
 }
 
 /**
@@ -127,10 +169,8 @@ export function verifyWebhookSecret(provided?: string): boolean {
 
 export async function getDarajaAccessToken(): Promise<string> {
   const cfg = getDarajaConfig();
-  if (!isMpesaConfigured()) {
-    throw new Error(
-      'M-Pesa Daraja API credentials (MPESA_CONSUMER_KEY, MPESA_CONSUMER_SECRET, MPESA_SHORTCODE, MPESA_PASSKEY) are not configured in server Secrets.',
-    );
+  if (!isMpesaConfigured(cfg)) {
+    throw new Error(getMpesaConfigDiagnostic(cfg));
   }
 
   const credentials = Buffer.from(`${cfg.consumerKey}:${cfg.consumerSecret}`, 'utf8').toString('base64');
@@ -138,16 +178,31 @@ export async function getDarajaAccessToken(): Promise<string> {
     method: 'GET',
     headers: {
       Authorization: `Basic ${credentials}`,
+      Accept: 'application/json',
+      'User-Agent': 'AcademicAssistant/1.0',
     },
   });
 
-  const payload = (await res.json().catch(() => ({}))) as {
+  const rawBody = await res.text();
+  let payload: {
     access_token?: string;
     errorMessage?: string;
     error?: string;
-  };
+  } = {};
+  if (rawBody.trim().startsWith('{')) {
+    try {
+      payload = JSON.parse(rawBody);
+    } catch {
+      payload = {};
+    }
+  }
 
   if (!res.ok || !payload.access_token) {
+    if (res.status === 400 && !payload.errorMessage && !payload.error) {
+      throw new Error(
+        `Safaricom Daraja rejected the OAuth credentials (HTTP 400). Verify MPESA_CONSUMER_KEY, MPESA_CONSUMER_SECRET, and MPESA_ENVIRONMENT (${cfg.environment}) in server Secrets.`,
+      );
+    }
     throw new Error(payload.errorMessage || payload.error || `Daraja OAuth failed (${res.status}).`);
   }
 
@@ -193,6 +248,8 @@ export async function initiateMpesaStkPush(input: {
     headers: {
       Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
+      Accept: 'application/json',
+      'User-Agent': 'AcademicAssistant/1.0',
     },
     body: JSON.stringify(body),
   });
@@ -242,6 +299,8 @@ export async function queryMpesaStkPushStatus(checkoutRequestId: string): Promis
     headers: {
       Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
+      Accept: 'application/json',
+      'User-Agent': 'AcademicAssistant/1.0',
     },
     body: JSON.stringify({
       BusinessShortCode: cfg.shortCode,
@@ -321,3 +380,102 @@ export function parseDarajaCallbackPayload(body: unknown): ParsedDarajaCallback 
     amountPaid,
   };
 }
+
+export interface CachedMpesaCheckout {
+  checkoutRequestId: string;
+  merchantRequestId: string;
+  userId?: string;
+  planId?: 'scholar_monthly' | 'semester_pro';
+  planName?: string;
+  amountKes?: number;
+  phoneMasked?: string;
+  environment?: 'sandbox' | 'production';
+  status: 'pending' | 'completed' | 'failed' | 'cancelled';
+  resultCode: number;
+  resultDesc: string;
+  mpesaReceiptNumber?: string;
+  updatedAtMs: number;
+}
+
+const checkoutCache = new Map<string, CachedMpesaCheckout>();
+const MAX_CHECKOUT_CACHE = 500;
+
+function pruneCheckoutCacheIfNeeded() {
+  if (checkoutCache.size < MAX_CHECKOUT_CACHE) return;
+  const oldestKey = checkoutCache.keys().next().value;
+  if (oldestKey) checkoutCache.delete(oldestKey);
+}
+
+export function recordPendingCheckout(entry: {
+  checkoutRequestId: string;
+  merchantRequestId: string;
+  userId: string;
+  planId: 'scholar_monthly' | 'semester_pro';
+  planName: string;
+  amountKes: number;
+  phoneMasked: string;
+  environment: 'sandbox' | 'production';
+  resultDesc: string;
+}): CachedMpesaCheckout {
+  pruneCheckoutCacheIfNeeded();
+  const record: CachedMpesaCheckout = {
+    checkoutRequestId: entry.checkoutRequestId,
+    merchantRequestId: entry.merchantRequestId,
+    userId: entry.userId,
+    planId: entry.planId,
+    planName: entry.planName,
+    amountKes: entry.amountKes,
+    phoneMasked: entry.phoneMasked,
+    environment: entry.environment,
+    status: 'pending',
+    resultCode: 0,
+    resultDesc: entry.resultDesc.slice(0, 300),
+    updatedAtMs: Date.now(),
+  };
+  checkoutCache.set(entry.checkoutRequestId, record);
+  return record;
+}
+
+export function updateCheckoutFromCallback(parsed: ParsedDarajaCallback): CachedMpesaCheckout {
+  const existing = checkoutCache.get(parsed.checkoutRequestId);
+  const nextStatus: CachedMpesaCheckout['status'] =
+    parsed.resultCode === 0 ? 'completed' : parsed.resultCode === 1032 ? 'cancelled' : 'failed';
+
+  pruneCheckoutCacheIfNeeded();
+  const updated: CachedMpesaCheckout = {
+    ...existing,
+    checkoutRequestId: parsed.checkoutRequestId,
+    merchantRequestId: parsed.merchantRequestId || existing?.merchantRequestId || '',
+    status: nextStatus,
+    resultCode: parsed.resultCode,
+    resultDesc: (parsed.resultDesc || existing?.resultDesc || '').slice(0, 300),
+    mpesaReceiptNumber: parsed.mpesaReceiptNumber || existing?.mpesaReceiptNumber || '',
+    updatedAtMs: Date.now(),
+  };
+  checkoutCache.set(parsed.checkoutRequestId, updated);
+  return updated;
+}
+
+export function updateCheckoutFromQuery(
+  checkoutRequestId: string,
+  status: CachedMpesaCheckout['status'],
+  resultCode: number,
+  resultDesc: string,
+): CachedMpesaCheckout | undefined {
+  const existing = checkoutCache.get(checkoutRequestId);
+  if (!existing) return undefined;
+  const updated: CachedMpesaCheckout = {
+    ...existing,
+    status,
+    resultCode,
+    resultDesc: resultDesc.slice(0, 300),
+    updatedAtMs: Date.now(),
+  };
+  checkoutCache.set(checkoutRequestId, updated);
+  return updated;
+}
+
+export function getCheckoutRecord(checkoutRequestId: string): CachedMpesaCheckout | undefined {
+  return checkoutCache.get(checkoutRequestId);
+}
+

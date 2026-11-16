@@ -20,10 +20,14 @@ import {
 import {
   buildDarajaPassword,
   formatDarajaTimestamp,
+  getDarajaConfig,
+  getMpesaConfigDiagnostic,
+  isMpesaConfigured,
   maskKenyanPhone,
   normalizeKenyanPhone,
   parseDarajaCallbackPayload,
 } from '../server/services/mpesaDaraja';
+import { getServerConfig } from '../server/config';
 
 describe('Academic Document & Audio Utilities', () => {
   it('chunks long academic text into overlapping excerpts with sequential indices', () => {
@@ -149,4 +153,89 @@ describe('Academic Document & Audio Utilities', () => {
       amountPaid: 350,
     });
   });
+
+  it('rejects short or placeholder Daraja secrets and accepts valid Safaricom credentials', () => {
+    const baseCfg = {
+      environment: 'sandbox' as const,
+      baseUrl: 'https://sandbox.safaricom.co.ke',
+      webhookSecret: '',
+    };
+
+    expect(
+      isMpesaConfigured({
+        ...baseCfg,
+        consumerKey: '34',
+        consumerSecret: '34',
+        shortCode: '34',
+        passkey: '34',
+      }),
+    ).toBe(false);
+
+    expect(
+      isMpesaConfigured({
+        ...baseCfg,
+        consumerKey: 'your_consumer_key_here',
+        consumerSecret: 'your_consumer_secret_here',
+        shortCode: '174379',
+        passkey: 'MY_DARAJA_PASSKEY_1234567890',
+      }),
+    ).toBe(false);
+
+    expect(
+      getMpesaConfigDiagnostic({
+        ...baseCfg,
+        consumerKey: '34',
+        consumerSecret: '34',
+        shortCode: '34',
+        passkey: '34',
+      }),
+    ).toContain('MPESA_CONSUMER_KEY');
+
+    expect(
+      isMpesaConfigured({
+        ...baseCfg,
+        consumerKey: 'G9aBcDeFgHiJkLmNoPqRsTuVwXyZ1234',
+        consumerSecret: '1234567890abcdef',
+        shortCode: '174379',
+        passkey: 'bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919',
+      }),
+    ).toBe(true);
+  });
+
+  it('ignores sentinel "34" values in server defaultLimits and Daraja env config', () => {
+    const prevRec = process.env.FREE_MONTHLY_RECORDING_MINUTES;
+    const prevMsg = process.env.FREE_DAILY_AI_MESSAGES;
+    const prevSto = process.env.FREE_STORAGE_LIMIT_MB;
+    const prevWebhook = process.env.PAYMENT_WEBHOOK_SECRET;
+
+    process.env.FREE_MONTHLY_RECORDING_MINUTES = '34';
+    process.env.FREE_DAILY_AI_MESSAGES = '34';
+    process.env.FREE_STORAGE_LIMIT_MB = '34';
+    process.env.PAYMENT_WEBHOOK_SECRET = '34';
+
+    try {
+      const serverCfg = getServerConfig();
+      expect(serverCfg.defaultLimits).toEqual({
+        freeRecordingMinutes: 120,
+        freeAiMessagesPerDay: 40,
+        freeStorageLimitMb: 250,
+      });
+
+      const darajaCfg = getDarajaConfig();
+      expect(darajaCfg.webhookSecret).toBe('');
+    } finally {
+      if (prevRec === undefined) delete process.env.FREE_MONTHLY_RECORDING_MINUTES;
+      else process.env.FREE_MONTHLY_RECORDING_MINUTES = prevRec;
+
+      if (prevMsg === undefined) delete process.env.FREE_DAILY_AI_MESSAGES;
+      else process.env.FREE_DAILY_AI_MESSAGES = prevMsg;
+
+      if (prevSto === undefined) delete process.env.FREE_STORAGE_LIMIT_MB;
+      else process.env.FREE_STORAGE_LIMIT_MB = prevSto;
+
+      if (prevWebhook === undefined) delete process.env.PAYMENT_WEBHOOK_SECRET;
+      else process.env.PAYMENT_WEBHOOK_SECRET = prevWebhook;
+    }
+  });
 });
+

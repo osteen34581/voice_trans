@@ -80,8 +80,8 @@ export function RevisionLibraryView({ resources, bookmarks }: RevisionLibraryVie
         await setDoc(doc(db, 'resourceBookmarks', id), {
           userId: user.uid,
           resourceId: res.id,
-          resourceTitle: res.title,
-          unitCode: res.unitCode,
+          resourceTitle: (res.title || '').slice(0, 200),
+          unitCode: (res.unitCode || '').slice(0, 32),
           createdAt: serverTimestamp(),
         });
         notify('Resource bookmarked', res.title, 'success');
@@ -94,8 +94,12 @@ export function RevisionLibraryView({ resources, bookmarks }: RevisionLibraryVie
   const handleSubmitResource = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
-    if (!title.trim() || !course.trim() || !unitCode.trim() || !contentText.trim()) {
-      notify('Incomplete submission', 'Fill in title, course, unit code, and study content.', 'error');
+    const cleanTitle = title.trim().slice(0, 200);
+    const cleanCourse = course.trim().slice(0, 160);
+    const cleanUnitCode = unitCode.trim().toUpperCase().slice(0, 32);
+    const cleanContent = contentText.trim().slice(0, 120000);
+    if (cleanTitle.length < 2 || cleanCourse.length < 2 || cleanUnitCode.length < 2 || !cleanContent) {
+      notify('Incomplete submission', 'Fill in title, course, unit code (min 2 chars), and study content.', 'error');
       return;
     }
 
@@ -103,16 +107,16 @@ export function RevisionLibraryView({ resources, bookmarks }: RevisionLibraryVie
     const id = makeDocId('res');
     try {
       await setDoc(doc(db, 'resources', id), {
-        title: title.trim(),
-        category,
-        university,
-        faculty,
-        course: course.trim(),
-        unitCode: unitCode.trim().toUpperCase(),
-        topic: topic.trim(),
-        description: description.trim(),
-        contentText: contentText.trim(),
-        fileName: `${unitCode.trim().toLowerCase()}-resource.txt`,
+        title: cleanTitle,
+        category: category.slice(0, 64),
+        university: university.slice(0, 160),
+        faculty: faculty.slice(0, 160),
+        course: cleanCourse,
+        unitCode: cleanUnitCode,
+        topic: topic.trim().slice(0, 160),
+        description: description.trim().slice(0, 2000),
+        contentText: cleanContent,
+        fileName: `${cleanUnitCode.toLowerCase()}-resource.txt`.slice(0, 200),
         fileType: 'text/plain',
         status: 'pending', // Always moderated before becoming public
         submittedBy: user.uid,
@@ -145,8 +149,8 @@ export function RevisionLibraryView({ resources, bookmarks }: RevisionLibraryVie
       await setDoc(doc(db, 'resourceReports', id), {
         userId: user.uid,
         resourceId: reportTarget.id,
-        reason: reportReason,
-        details: reportDetails.trim(),
+        reason: reportReason.slice(0, 120),
+        details: reportDetails.trim().slice(0, 1000),
         status: 'open',
         createdAt: serverTimestamp(),
       });

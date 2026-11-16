@@ -23,7 +23,7 @@ import {
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../ui/ToastContext';
 import { apiJson } from '../../lib/api';
-import { db, formatFirestoreDate, handleFirestoreError, makeDocId, OperationType } from '../../lib/firebase';
+import { db, formatFirestoreDate, handleFirestoreError, logFirestoreError, makeDocId, OperationType } from '../../lib/firebase';
 import { KENYAN_FACULTIES } from '../../config/branding';
 import type {
   AuditLog,
@@ -105,25 +105,28 @@ export function AdminDashboardView() {
 
   // Real-time admin listeners
   useEffect(() => {
+    const onErr = (path: string) => (err: unknown) => {
+      logFirestoreError(err, OperationType.LIST, path);
+    };
     const unsubs = [
       onSnapshot(collection(db, 'users'), (snap) => {
         setUsersList(snap.docs.map((d) => d.data() as UserProfile));
-      }),
+      }, onErr('users')),
       onSnapshot(collection(db, 'lectures'), (snap) => {
         setLecturesList(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Lecture, 'id'>) })));
-      }),
+      }, onErr('lectures')),
       onSnapshot(collection(db, 'resources'), (snap) => {
         setResourcesList(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<RevisionResource, 'id'>) })));
-      }),
+      }, onErr('resources')),
       onSnapshot(collection(db, 'resourceReports'), (snap) => {
         setReportsList(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<ResourceReport, 'id'>) })));
-      }),
+      }, onErr('resourceReports')),
       onSnapshot(collection(db, 'universities'), (snap) => {
         setUniversitiesList(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<UniversityItem, 'id'>) })));
-      }),
+      }, onErr('universities')),
       onSnapshot(collection(db, 'courses'), (snap) => {
         setCoursesList(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<CourseItem, 'id'>) })));
-      }),
+      }, onErr('courses')),
       onSnapshot(collection(db, 'auditLogs'), (snap) => {
         const items = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<AuditLog, 'id'>) }));
         items.sort((a, b) => {
@@ -132,7 +135,7 @@ export function AdminDashboardView() {
           return tB - tA;
         });
         setAuditLogs(items);
-      }),
+      }, onErr('auditLogs')),
     ];
     return () => unsubs.forEach((u) => u());
   }, []);
@@ -216,16 +219,19 @@ export function AdminDashboardView() {
 
   const handleAddUniversity = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!uniName.trim() || !uniShort.trim()) return;
+    if (uniName.trim().length < 2 || uniShort.trim().length < 2) {
+      notify('Incomplete university', 'Name and code must be at least 2 characters.', 'error');
+      return;
+    }
     const id = makeDocId('uni');
     try {
       await setDoc(doc(db, 'universities', id), {
-        name: uniName.trim(),
-        shortCode: uniShort.trim().toUpperCase(),
-        county: uniCounty.trim() || 'Kenya',
+        name: uniName.trim().slice(0, 160),
+        shortCode: uniShort.trim().toUpperCase().slice(0, 24),
+        county: (uniCounty.trim() || 'Kenya').slice(0, 80),
         createdAt: serverTimestamp(),
       });
-      await writeAuditLog('add_university', 'university', id, uniName.trim());
+      await writeAuditLog('add_university', 'university', id, uniName.trim().slice(0, 160));
       setUniName('');
       setUniShort('');
       notify('University added', undefined, 'success');
@@ -236,17 +242,20 @@ export function AdminDashboardView() {
 
   const handleAddCourse = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!courseName.trim() || !courseCode.trim()) return;
+    if (courseName.trim().length < 2 || courseCode.trim().length < 2) {
+      notify('Incomplete course', 'Course name and code must be at least 2 characters.', 'error');
+      return;
+    }
     const id = makeDocId('crs');
     try {
       await setDoc(doc(db, 'courses', id), {
-        university: courseUni,
-        faculty: courseFaculty,
-        name: courseName.trim(),
-        code: courseCode.trim().toUpperCase(),
+        university: courseUni.trim().slice(0, 160),
+        faculty: courseFaculty.trim().slice(0, 160),
+        name: courseName.trim().slice(0, 160),
+        code: courseCode.trim().toUpperCase().slice(0, 32),
         createdAt: serverTimestamp(),
       });
-      await writeAuditLog('add_course', 'course', id, `${courseCode.trim().toUpperCase()} ${courseName.trim()}`);
+      await writeAuditLog('add_course', 'course', id, `${courseCode.trim().toUpperCase()} ${courseName.trim()}`.slice(0, 200));
       setCourseName('');
       setCourseCode('');
       notify('Course programme added', undefined, 'success');
@@ -260,17 +269,18 @@ export function AdminDashboardView() {
     if (!user) return;
     setSavingSettings(true);
     try {
+      const safeBrand = (brandName.trim() || 'AI Academic Assistant').slice(0, 80);
       await setDoc(doc(db, 'systemSettings', 'global'), {
-        brandName: brandName.trim() || 'AI Academic Assistant',
-        tagline: tagline.trim(),
-        primaryColor: primaryColor.trim() || '#047857',
-        freeRecordingMinutes: Number(freeRecordingMinutes) || 120,
-        freeAiMessagesPerDay: Number(freeAiMessagesPerDay) || 40,
-        freeStorageLimitMb: Number(freeStorageLimitMb) || 250,
-        updatedBy: user.uid,
+        brandName: safeBrand.length >= 2 ? safeBrand : 'AI Academic Assistant',
+        tagline: tagline.trim().slice(0, 160),
+        primaryColor: (primaryColor.trim() || '#047857').slice(0, 32),
+        freeRecordingMinutes: Math.max(0, Number(freeRecordingMinutes) || 0),
+        freeAiMessagesPerDay: Math.max(0, Number(freeAiMessagesPerDay) || 0),
+        freeStorageLimitMb: Math.max(0, Number(freeStorageLimitMb) || 0),
+        updatedBy: user.uid.slice(0, 128),
         updatedAt: serverTimestamp(),
       });
-      await writeAuditLog('update_system_settings', 'systemSettings', 'global', `Brand: ${brandName.trim()}`);
+      await writeAuditLog('update_system_settings', 'systemSettings', 'global', `Brand: ${safeBrand}`);
       notify('Platform branding & limits saved', undefined, 'success');
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, 'systemSettings/global');
@@ -645,7 +655,16 @@ export function AdminDashboardView() {
                   </span>
                   <button
                     type="button"
-                    onClick={() => deleteDoc(doc(db, 'universities', u.id))}
+                    onClick={async () => {
+                      try {
+                        await deleteDoc(doc(db, 'universities', u.id));
+                        await writeAuditLog('delete_university', 'university', u.id, u.name);
+                        notify('University removed', u.name, 'info');
+                      } catch (err) {
+                        logFirestoreError(err, OperationType.DELETE, `universities/${u.id}`);
+                        notify('Could not delete university', undefined, 'error');
+                      }
+                    }}
                     className="text-slate-400 hover:text-red-600 cursor-pointer"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -710,7 +729,16 @@ export function AdminDashboardView() {
                   </span>
                   <button
                     type="button"
-                    onClick={() => deleteDoc(doc(db, 'courses', c.id))}
+                    onClick={async () => {
+                      try {
+                        await deleteDoc(doc(db, 'courses', c.id));
+                        await writeAuditLog('delete_course', 'course', c.id, c.name);
+                        notify('Course removed', c.name, 'info');
+                      } catch (err) {
+                        logFirestoreError(err, OperationType.DELETE, `courses/${c.id}`);
+                        notify('Could not delete course', undefined, 'error');
+                      }
+                    }}
                     className="text-slate-400 hover:text-red-600 cursor-pointer"
                   >
                     <Trash2 className="w-3.5 h-3.5" />

@@ -11,7 +11,7 @@ import { doc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../ui/ToastContext';
 import { base64Pcm24kToFloat32, float32ToPcm16Base64 } from '../../lib/audioPcm';
-import { db, handleFirestoreError, makeDocId, OperationType } from '../../lib/firebase';
+import { db, logFirestoreError, makeDocId, OperationType } from '../../lib/firebase';
 import type { AiMaterial, DocumentChunk } from '../../types/academic';
 
 const VOICE_OPTIONS = [
@@ -106,15 +106,15 @@ export function LiveVoiceTutorPanel({
     const trimmedAssistant = assistantText.trim().slice(0, 40000);
     if (!trimmedUser && !trimmedAssistant) return;
 
-    let convId = activeConvIdRef.current;
-    if (!convId) {
-      const seedTitle = trimmedUser || 'Voice Study Session';
-      convId = await onEnsureConversation(seedTitle.slice(0, 48));
-      activeConvIdRef.current = convId;
-    }
-    if (!convId) return;
-
     try {
+      let convId = activeConvIdRef.current;
+      if (!convId) {
+        const seedTitle = trimmedUser || 'Voice Study Session';
+        convId = await onEnsureConversation(seedTitle.slice(0, 48));
+        activeConvIdRef.current = convId;
+      }
+      if (!convId) return;
+
       if (trimmedUser) {
         const msgId = makeDocId('msg');
         await setDoc(doc(db, 'aiMessages', msgId), {
@@ -135,18 +135,23 @@ export function LiveVoiceTutorPanel({
           content: trimmedAssistant,
           citations: activeMaterial
             ? `Live Voice (${voiceName}) · Grounded in ${activeMaterial.title}`.slice(0, 400)
-            : `Live Voice (${voiceName}) · General Academic Knowledge`,
+            : `Live Voice (${voiceName}) · General Academic Knowledge`.slice(0, 400),
           createdAt: serverTimestamp(),
         });
       }
       await updateDoc(doc(db, 'aiConversations', convId), {
         teachingMode,
-        materialId: activeMaterial?.id || '',
-        unitCode: unitCode || '',
+        materialId: (activeMaterial?.id || '').slice(0, 128),
+        unitCode: (unitCode || '').slice(0, 32),
         updatedAt: serverTimestamp(),
       });
     } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, `aiMessages/${convId}`);
+      logFirestoreError(err, OperationType.WRITE, `aiMessages/${activeConvIdRef.current || 'new'}`);
+      notify(
+        'Could not save voice transcript turn',
+        err instanceof Error ? err.message : 'Check your connection and try again.',
+        'error',
+      );
     }
   };
 
@@ -285,8 +290,27 @@ export function LiveVoiceTutorPanel({
       });
       mediaStreamRef.current = stream;
 
-      const inputCtx = new AudioContext({ sampleRate: 16000 });
-      const outputCtx = new AudioContext({ sampleRate: 24000 });
+      const AudioCtx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      let inputCtx: AudioContext;
+      try {
+        inputCtx = new AudioCtx({ sampleRate: 16000 });
+      } catch {
+        inputCtx = new AudioCtx();
+      }
+      let outputCtx: AudioContext;
+      try {
+        outputCtx = new AudioCtx({ sampleRate: 24000 });
+      } catch {
+        outputCtx = new AudioCtx();
+      }
+      if (inputCtx.state === 'suspended') {
+        await inputCtx.resume().catch(() => {});
+      }
+      if (outputCtx.state === 'suspended') {
+        await outputCtx.resume().catch(() => {});
+      }
       inputCtxRef.current = inputCtx;
       outputCtxRef.current = outputCtx;
 

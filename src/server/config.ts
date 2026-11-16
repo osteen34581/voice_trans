@@ -18,6 +18,13 @@ function validModel(envVal: string | undefined, fallback: string): string {
   return /^(gemini|lyria)-[a-z0-9.\-]+$/i.test(trimmed) ? trimmed : fallback;
 }
 
+function validLimit(envVal: string | undefined, fallback: number): number {
+  const trimmed = (envVal || '').trim();
+  if (!trimmed || trimmed === '34') return fallback;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 export function getServerConfig(): AppServerConfig {
   const adminEmailsRaw = process.env.ADMIN_EMAILS || '';
   const parsedAdmins = adminEmailsRaw
@@ -30,6 +37,7 @@ export function getServerConfig(): AppServerConfig {
   }
 
   const providerRaw = (process.env.AI_PROVIDER || '').trim().toLowerCase();
+  const geminiKey = (process.env.GEMINI_API_KEY || '').trim();
 
   return {
     aiProvider: providerRaw === 'gemini' ? 'gemini' : 'gemini',
@@ -37,12 +45,12 @@ export function getServerConfig(): AppServerConfig {
     transcribeModel: validModel(process.env.AI_TRANSCRIBE_MODEL, 'gemini-3.5-transcribe'),
     embeddingModel: validModel(process.env.AI_EMBEDDING_MODEL, 'gemini-embedding-2'),
     liveModel: validModel(process.env.AI_LIVE_MODEL, 'gemini-3.8-live'),
-    geminiConfigured: Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'MY_GEMINI_API_KEY'),
+    geminiConfigured: Boolean(geminiKey && geminiKey !== 'MY_GEMINI_API_KEY' && geminiKey !== '34'),
     adminEmails,
     defaultLimits: {
-      freeRecordingMinutes: Number(process.env.FREE_MONTHLY_RECORDING_MINUTES || 120),
-      freeAiMessagesPerDay: Number(process.env.FREE_DAILY_AI_MESSAGES || 40),
-      freeStorageLimitMb: Number(process.env.FREE_STORAGE_LIMIT_MB || 250),
+      freeRecordingMinutes: validLimit(process.env.FREE_MONTHLY_RECORDING_MINUTES, 120),
+      freeAiMessagesPerDay: validLimit(process.env.FREE_DAILY_AI_MESSAGES, 40),
+      freeStorageLimitMb: validLimit(process.env.FREE_STORAGE_LIMIT_MB, 250),
     },
   };
 }

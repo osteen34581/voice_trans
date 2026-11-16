@@ -54,7 +54,7 @@ import {
   exportGeneratedNoteAsPdf,
   markdownToSimpleHtml,
 } from '../../lib/exporters';
-import { db, formatFirestoreDate, handleFirestoreError, makeDocId, OperationType } from '../../lib/firebase';
+import { db, formatFirestoreDate, handleFirestoreError, logFirestoreError, makeDocId, OperationType } from '../../lib/firebase';
 import type { DocumentVersion, GeneratedNote, StudyDocument } from '../../types/academic';
 
 interface DocumentEditorViewProps {
@@ -156,7 +156,9 @@ export function DocumentEditorView({
         });
         setVersions(rows);
       },
-      () => {},
+      (err) => {
+        logFirestoreError(err, OperationType.LIST, 'documentVersions');
+      },
     );
     return () => unsub();
   }, [user, activeDoc?.id]);
@@ -170,15 +172,15 @@ export function DocumentEditorView({
         if (html === activeDoc.htmlContent && title === activeDoc.title) return;
         try {
           await updateDoc(doc(db, 'documents', activeDoc.id), {
-            title: title.trim() || 'Untitled Document',
-            university: university.trim(),
-            course: course.trim(),
-            unitCode: unitCode.trim(),
-            unitName: unitName.trim(),
-            lecturerName: lecturerName.trim(),
-            lectureDate: lectureDate.trim(),
-            htmlContent: html,
-            plainText: editor.getText(),
+            title: (title.trim() || 'Untitled Document').slice(0, 200),
+            university: university.trim().slice(0, 160),
+            course: course.trim().slice(0, 160),
+            unitCode: unitCode.trim().slice(0, 32),
+            unitName: unitName.trim().slice(0, 160),
+            lecturerName: lecturerName.trim().slice(0, 120),
+            lectureDate: lectureDate.trim().slice(0, 32),
+            htmlContent: html.slice(0, 250000),
+            plainText: editor.getText().slice(0, 180000),
             updatedAt: serverTimestamp(),
           });
           setLastSavedLabel(`Autosaved ${new Date().toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit' })}`);
@@ -208,8 +210,8 @@ export function DocumentEditorView({
       await setDoc(doc(db, 'documents', id), {
         userId: user.uid,
         title: 'Untitled Study Notes',
-        university: profile?.university || '',
-        course: profile?.course || '',
+        university: (profile?.university || '').slice(0, 160),
+        course: (profile?.course || '').slice(0, 160),
         unitCode: '',
         unitName: '',
         lecturerName: '',
@@ -230,18 +232,18 @@ export function DocumentEditorView({
     if (!user || !activeDoc || !editor) return;
     setSaving(true);
     try {
-      const htmlContent = editor.getHTML();
-      const cleanTitle = title.trim() || 'Untitled Study Notes';
+      const htmlContent = editor.getHTML().slice(0, 250000);
+      const cleanTitle = (title.trim() || 'Untitled Study Notes').slice(0, 200);
       await updateDoc(doc(db, 'documents', activeDoc.id), {
         title: cleanTitle,
-        university: university.trim(),
-        course: course.trim(),
-        unitCode: unitCode.trim(),
-        unitName: unitName.trim(),
-        lecturerName: lecturerName.trim(),
-        lectureDate: lectureDate.trim(),
+        university: university.trim().slice(0, 160),
+        course: course.trim().slice(0, 160),
+        unitCode: unitCode.trim().slice(0, 32),
+        unitName: unitName.trim().slice(0, 160),
+        lecturerName: lecturerName.trim().slice(0, 120),
+        lectureDate: lectureDate.trim().slice(0, 32),
         htmlContent,
-        plainText: editor.getText(),
+        plainText: editor.getText().slice(0, 180000),
         updatedAt: serverTimestamp(),
       });
 
@@ -269,16 +271,16 @@ export function DocumentEditorView({
     try {
       await setDoc(doc(db, 'documents', id), {
         userId: user.uid,
-        lectureId: activeDoc.lectureId || '',
-        title: `${title || activeDoc.title} (Copy)`,
-        university,
-        course,
-        unitCode,
-        unitName,
-        lecturerName,
-        lectureDate,
-        htmlContent: editor.getHTML(),
-        plainText: editor.getText(),
+        lectureId: (activeDoc.lectureId || '').slice(0, 128),
+        title: `${(title || activeDoc.title).slice(0, 190)} (Copy)`.slice(0, 200),
+        university: university.trim().slice(0, 160),
+        course: course.trim().slice(0, 160),
+        unitCode: unitCode.trim().slice(0, 32),
+        unitName: unitName.trim().slice(0, 160),
+        lecturerName: lecturerName.trim().slice(0, 120),
+        lectureDate: lectureDate.trim().slice(0, 32),
+        htmlContent: editor.getHTML().slice(0, 250000),
+        plainText: editor.getText().slice(0, 180000),
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -330,8 +332,8 @@ export function DocumentEditorView({
     await setDoc(doc(db, 'notifications', makeDocId('notif')), {
       userId: user.uid,
       type: 'export',
-      title: `Document exported (${format})`,
-      message: `"${(docTitle || title || 'Study Document').slice(0, 120)}" was downloaded as ${format}.`,
+      title: `Document exported (${format})`.slice(0, 160),
+      message: `"${(docTitle || title || 'Study Document').slice(0, 120)}" was downloaded as ${format}.`.slice(0, 500),
       read: false,
       linkTab: 'documents',
       createdAt: serverTimestamp(),
@@ -630,9 +632,17 @@ export function DocumentEditorView({
                     type="button"
                     onClick={async () => {
                       if (!editor) return;
-                      await exportDocumentAsDocx(buildMeta(), editor.getHTML());
-                      recordExportNotification('Word DOCX');
-                      notify('Word (.docx) downloaded', undefined, 'success');
+                      try {
+                        await exportDocumentAsDocx(buildMeta(), editor.getHTML());
+                        recordExportNotification('Word DOCX');
+                        notify('Word (.docx) downloaded', undefined, 'success');
+                      } catch (err) {
+                        notify(
+                          'Word export failed',
+                          err instanceof Error ? err.message : 'Unable to export DOCX.',
+                          'error',
+                        );
+                      }
                     }}
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
                   >
@@ -643,8 +653,16 @@ export function DocumentEditorView({
                     type="button"
                     onClick={() => {
                       if (!editor) return;
-                      exportDocumentAsTxt(buildMeta(), editor.getHTML());
-                      notify('Plain text downloaded', undefined, 'info');
+                      try {
+                        exportDocumentAsTxt(buildMeta(), editor.getHTML());
+                        notify('Plain text downloaded', undefined, 'info');
+                      } catch (err) {
+                        notify(
+                          'TXT export failed',
+                          err instanceof Error ? err.message : 'Unable to export text.',
+                          'error',
+                        );
+                      }
                     }}
                     className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-200 dark:border-slate-800 cursor-pointer"
                   >

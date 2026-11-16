@@ -138,7 +138,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (!snap?.exists() && firebaseUser.emailVerified) {
           await setDoc(userRef, {
             uid: firebaseUser.uid,
-            fullName: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Student',
+            fullName: (firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Student').slice(0, 120),
             onboardingCompleted: false,
             suspended: false,
             createdAt: serverTimestamp(),
@@ -150,7 +150,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (!privSnap?.exists() && firebaseUser.emailVerified) {
           await setDoc(privateRef, {
             userId: firebaseUser.uid,
-            email: firebaseUser.email || '',
+            email: (firebaseUser.email || '').slice(0, 180),
             theme: theme,
             language: 'en-KE',
             notifyTranscription: true,
@@ -289,28 +289,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const existing = await getDoc(userRef);
         if (existing.exists()) {
           await updateDoc(userRef, {
-            fullName: data.fullName || profile?.fullName || user.displayName || 'Student',
-            university: data.university || '',
-            faculty: data.faculty || '',
-            course: data.course || '',
-            yearOfStudy: data.yearOfStudy || '',
-            semester: data.semester || '',
-            academicInterests: data.academicInterests || '',
-            studyPreferences: data.studyPreferences || '',
+            fullName: (data.fullName || profile?.fullName || user.displayName || 'Student').slice(0, 120),
+            university: (data.university || '').slice(0, 160),
+            faculty: (data.faculty || '').slice(0, 160),
+            course: (data.course || '').slice(0, 160),
+            yearOfStudy: (data.yearOfStudy || '').slice(0, 40),
+            semester: (data.semester || '').slice(0, 40),
+            academicInterests: (data.academicInterests || '').slice(0, 400),
+            studyPreferences: (data.studyPreferences || '').slice(0, 400),
             onboardingCompleted: true,
             updatedAt: serverTimestamp(),
           });
         } else {
           await setDoc(userRef, {
             uid: user.uid,
-            fullName: data.fullName || user.displayName || 'Student',
-            university: data.university || '',
-            faculty: data.faculty || '',
-            course: data.course || '',
-            yearOfStudy: data.yearOfStudy || '',
-            semester: data.semester || '',
-            academicInterests: data.academicInterests || '',
-            studyPreferences: data.studyPreferences || '',
+            fullName: (data.fullName || user.displayName || 'Student').slice(0, 120),
+            university: (data.university || '').slice(0, 160),
+            faculty: (data.faculty || '').slice(0, 160),
+            course: (data.course || '').slice(0, 160),
+            yearOfStudy: (data.yearOfStudy || '').slice(0, 40),
+            semester: (data.semester || '').slice(0, 40),
+            academicInterests: (data.academicInterests || '').slice(0, 400),
+            studyPreferences: (data.studyPreferences || '').slice(0, 400),
             onboardingCompleted: true,
             suspended: false,
             createdAt: serverTimestamp(),

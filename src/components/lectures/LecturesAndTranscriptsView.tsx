@@ -160,7 +160,7 @@ export function LecturesAndTranscriptsView({
       const msg = err instanceof Error ? err.message : 'Transcription failed.';
       await updateDoc(doc(db, 'lectures', lec.id), {
         transcriptionStatus: 'failed',
-        transcriptionError: msg,
+        transcriptionError: msg.slice(0, 500),
         updatedAt: serverTimestamp(),
       }).catch(() => {});
       notify('Transcription failed', msg, 'error');
@@ -174,7 +174,7 @@ export function LecturesAndTranscriptsView({
     setSavingTranscript(true);
     try {
       await updateDoc(doc(db, 'transcripts', activeTranscript.id), {
-        editedText: editedTextDraft,
+        editedText: editedTextDraft.slice(0, 180000),
         updatedAt: serverTimestamp(),
       });
       notify('Transcript edits saved', 'Original transcript remains preserved separately.', 'success');
@@ -215,12 +215,12 @@ export function LecturesAndTranscriptsView({
       await setDoc(doc(db, 'generatedNotes', noteId), {
         userId: user.uid,
         lectureId: activeLecture.id,
-        unitCode: activeLecture.unitCode || '',
-        unitName: activeLecture.unitName || '',
-        title: `${activeLecture.title} — ${formatLabel}`,
-        format: formatLabel,
+        unitCode: (activeLecture.unitCode || '').slice(0, 32),
+        unitName: (activeLecture.unitName || '').slice(0, 160),
+        title: `${activeLecture.title} — ${formatLabel}`.slice(0, 200),
+        format: formatLabel.slice(0, 60),
         summaryLength,
-        contentMarkdown: res.contentMarkdown,
+        contentMarkdown: (res.contentMarkdown || '').slice(0, 180000),
         versionNumber: nextVersion,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -230,7 +230,7 @@ export function LecturesAndTranscriptsView({
         userId: user.uid,
         type: 'notes',
         title: 'AI lecture notes generated',
-        message: `Version ${nextVersion} (${summaryLength}) for "${activeLecture.title}" is ready.`,
+        message: `Version ${nextVersion} (${summaryLength}) for "${activeLecture.title.slice(0, 120)}" is ready.`.slice(0, 500),
         read: false,
         linkTab: 'notes',
         createdAt: serverTimestamp(),
@@ -257,15 +257,15 @@ export function LecturesAndTranscriptsView({
       await setDoc(doc(db, 'documents', docId), {
         userId: user.uid,
         lectureId: note.lectureId,
-        title: note.title,
-        university: activeLecture?.university || profile?.university || '',
-        course: activeLecture?.course || profile?.course || '',
-        unitCode: note.unitCode || activeLecture?.unitCode || '',
-        unitName: note.unitName || activeLecture?.unitName || '',
-        lecturerName: activeLecture?.lecturerName || '',
-        lectureDate: activeLecture?.lectureDate || '',
-        htmlContent,
-        plainText: note.contentMarkdown,
+        title: (note.title || 'Study Notes').slice(0, 200),
+        university: (activeLecture?.university || profile?.university || '').slice(0, 160),
+        course: (activeLecture?.course || profile?.course || '').slice(0, 160),
+        unitCode: (note.unitCode || activeLecture?.unitCode || '').slice(0, 32),
+        unitName: (note.unitName || activeLecture?.unitName || '').slice(0, 160),
+        lecturerName: (activeLecture?.lecturerName || '').slice(0, 120),
+        lectureDate: (activeLecture?.lectureDate || '').slice(0, 32),
+        htmlContent: htmlContent.slice(0, 250000),
+        plainText: (note.contentMarkdown || '').slice(0, 180000),
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -278,10 +278,14 @@ export function LecturesAndTranscriptsView({
   };
 
   const handleRenameLecture = async (lec: Lecture) => {
-    if (!renameTitle.trim()) return;
+    const cleaned = renameTitle.trim().slice(0, 200);
+    if (cleaned.length < 2) {
+      notify('Title too short', 'Lecture title must be at least 2 characters.', 'error');
+      return;
+    }
     try {
       await updateDoc(doc(db, 'lectures', lec.id), {
-        title: renameTitle.trim(),
+        title: cleaned,
         updatedAt: serverTimestamp(),
       });
       setRenamingId(null);

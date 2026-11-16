@@ -14,7 +14,17 @@ import {
   Trash2,
 } from 'lucide-react';
 import { deleteUser } from 'firebase/auth';
-import { deleteDoc, doc, serverTimestamp, updateDoc } from 'firebase/firestore';
+import {
+  collection,
+  deleteDoc,
+  doc,
+  onSnapshot,
+  query,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+  where,
+} from 'firebase/firestore';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../ui/ToastContext';
 import {
@@ -24,7 +34,7 @@ import {
   YEAR_OF_STUDY_OPTIONS,
 } from '../../config/branding';
 import { apiJson } from '../../lib/api';
-import { db, handleFirestoreError, OperationType } from '../../lib/firebase';
+import { db, logFirestoreError, makeDocId, OperationType } from '../../lib/firebase';
 import type {
   AiConversation,
   AiMaterial,
@@ -113,6 +123,7 @@ export function SettingsView({
   // M-Pesa Billing & Premium Tier State
   const [plans, setPlans] = useState<PremiumPlanInfo[]>([]);
   const [mpesaConfigured, setMpesaConfigured] = useState<boolean>(false);
+  const [mpesaConfigNotice, setMpesaConfigNotice] = useState<string>('');
   const [mpesaEnv, setMpesaEnv] = useState<'sandbox' | 'production'>('sandbox');
   const [subscription, setSubscription] = useState<UserSubscription | null>(null);
   const [transactions, setTransactions] = useState<PaymentTransaction[]>([]);
@@ -121,76 +132,253 @@ export function SettingsView({
   const [mpesaPhone, setMpesaPhone] = useState('');
   const [initiatingStk, setInitiatingStk] = useState(false);
   const [pendingCheckoutId, setPendingCheckoutId] = useState<string | null>(null);
+  const [pendingPlanId, setPendingPlanId] = useState<'scholar_monthly' | 'semester_pro' | null>(null);
   const [checkingPayment, setCheckingPayment] = useState(false);
   const pollTimerRef = useRef<number | null>(null);
+  const subscriptionRef = useRef<UserSubscription | null>(null);
+  const transactionsRef = useRef<PaymentTransaction[]>([]);
+  const plansRef = useRef<PremiumPlanInfo[]>([]);
 
-  const loadBillingData = useCallback(async () => {
+  useEffect(() => {
+    subscriptionRef.current = subscription;
+  }, [subscription]);
+
+  useEffect(() => {
+    transactionsRef.current = transactions;
+  }, [transactions]);
+
+  useEffect(() => {
+    plansRef.current = plans;
+  }, [plans]);
+
+  const loadBillingPlans = useCallback(async () => {
     if (!user) return;
     setBillingLoading(true);
     try {
-      const [plansRes, statusRes] = await Promise.all([
-        apiJson<{
-          mpesaConfigured: boolean;
-          environment: 'sandbox' | 'production';
-          plans: PremiumPlanInfo[];
-        }>('/api/payments/plans'),
-        apiJson<{
-          subscription: UserSubscription | null;
-          transactions: PaymentTransaction[];
-        }>('/api/payments/status'),
-      ]);
+      const plansRes = await apiJson<{
+        mpesaConfigured: boolean;
+        configNotice?: string;
+        environment: 'sandbox' | 'production';
+        plans: PremiumPlanInfo[];
+      }>('/api/payments/plans');
       setPlans(plansRes.plans || []);
       setMpesaConfigured(Boolean(plansRes.mpesaConfigured));
+      setMpesaConfigNotice(plansRes.configNotice || '');
       setMpesaEnv(plansRes.environment || 'sandbox');
-      setSubscription(statusRes.subscription || null);
-      setTransactions(statusRes.transactions || []);
     } catch {
-      // Keep UI functional if billing status temporarily unreachable
+      // Keep UI functional if billing plans temporarily unreachable
     } finally {
       setBillingLoading(false);
     }
   }, [user]);
 
   useEffect(() => {
-    loadBillingData();
+    loadBillingPlans();
     return () => {
       if (pollTimerRef.current !== null) {
         window.clearInterval(pollTimerRef.current);
       }
     };
-  }, [loadBillingData]);
+  }, [loadBillingPlans]);
+
+  // Real-time owner-scoped Firestore listeners for subscription & M-Pesa transactions
+  useEffect(() => {
+    if (!user || !user.emailVerified) {
+      setSubscription(null);
+      setTransactions([]);
+      return;
+    }
+
+    const subDocRef = doc(db, 'subscriptions', user.uid);
+    const unsubSub = onSnapshot(
+      subDocRef,
+      (snap) => {
+        setSubscription(snap.exists() ? (snap.data() as UserSubscription) : null);
+      },
+      (err) => {
+        logFirestoreError(err, OperationType.GET, `subscriptions/${user.uid}`);
+      },
+    );
+
+    const txQuery = query(
+      collection(db, 'paymentTransactions'),
+      where('userId', '==', user.uid),
+    );
+    const unsubTx = onSnapshot(
+      txQuery,
+      (snap) => {
+        const toIso = (val: unknown): string => {
+          if (typeof val === 'string') return val;
+          if (
+            val &&
+            typeof val === 'object' &&
+            'toDate' in val &&
+            typeof (val as { toDate: () => Date }).toDate === 'function'
+          ) {
+            return (val as { toDate: () => Date }).toDate().toISOString();
+          }
+          return '';
+        };
+
+        const list = snap.docs
+          .map((d) => {
+            const data = d.data() as Record<string, unknown>;
+            return {
+              id: d.id,
+              userId: String(data.userId || ''),
+              planId: data.planId as 'scholar_monthly' | 'semester_pro',
+              planName: String(data.planName || ''),
+              amountKes: Number(data.amountKes || 0),
+              phoneMasked: String(data.phoneMasked || ''),
+              merchantRequestId: String(data.merchantRequestId || ''),
+              checkoutRequestId: String(data.checkoutRequestId || ''),
+              mpesaReceiptNumber: String(data.mpesaReceiptNumber || ''),
+              status: (data.status as PaymentTransaction['status']) || 'pending',
+              resultCode: typeof data.resultCode === 'number' ? data.resultCode : undefined,
+              resultDesc: String(data.resultDesc || ''),
+              environment: (data.environment as 'sandbox' | 'production') || 'sandbox',
+              createdAt: toIso(data.createdAt),
+              updatedAt: toIso(data.updatedAt),
+            } satisfies PaymentTransaction;
+          })
+          .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
+          .slice(0, 15);
+        setTransactions(list);
+      },
+      (err) => {
+        logFirestoreError(err, OperationType.LIST, 'paymentTransactions');
+      },
+    );
+
+    return () => {
+      unsubSub();
+      unsubTx();
+    };
+  }, [user]);
+
+  const toSafeTxDocId = (checkoutRequestId: string) =>
+    checkoutRequestId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 128);
 
   const handleQueryCheckoutStatus = useCallback(
-    async (checkoutId: string, silent = false) => {
-      if (!checkoutId) return;
+    async (
+      checkoutId: string,
+      silent = false,
+      fallbackPlanId?: 'scholar_monthly' | 'semester_pro' | null,
+    ) => {
+      if (!checkoutId || !user) return;
       setCheckingPayment(true);
       try {
-        const res = await apiJson<{ status: string; resultDesc: string }>('/api/payments/mpesa/query', {
+        const existingTx = transactionsRef.current.find((t) => t.checkoutRequestId === checkoutId);
+        const targetPlanId = fallbackPlanId || pendingPlanId || existingTx?.planId || undefined;
+
+        const res = await apiJson<{
+          status: string;
+          resultCode?: number;
+          resultDesc: string;
+          mpesaReceiptNumber?: string;
+          plan?: PremiumPlanInfo;
+        }>('/api/payments/mpesa/query', {
           method: 'POST',
-          body: JSON.stringify({ checkoutRequestId: checkoutId }),
+          body: JSON.stringify({
+            checkoutRequestId: checkoutId,
+            planId: targetPlanId,
+          }),
         });
 
-        if (res.status === 'completed') {
+        if (res.status === 'completed' || res.status === 'cancelled' || res.status === 'failed') {
           if (pollTimerRef.current !== null) {
             window.clearInterval(pollTimerRef.current);
             pollTimerRef.current = null;
           }
-          setPendingCheckoutId(null);
-          setSelectedPlanId(null);
-          await loadBillingData();
-          notify('M-Pesa payment confirmed', 'Your premium tier has been activated.', 'success');
-        } else if (res.status === 'cancelled' || res.status === 'failed') {
-          if (pollTimerRef.current !== null) {
-            window.clearInterval(pollTimerRef.current);
-            pollTimerRef.current = null;
+
+          const txDocId = toSafeTxDocId(checkoutId);
+          if (!existingTx || existingTx.status === 'pending') {
+              try {
+                await updateDoc(doc(db, 'paymentTransactions', txDocId), {
+                  status: res.status,
+                  resultCode:
+                    typeof res.resultCode === 'number'
+                      ? res.resultCode
+                      : res.status === 'completed'
+                        ? 0
+                        : -1,
+                  resultDesc: (res.resultDesc || '').slice(0, 300),
+                  mpesaReceiptNumber: (
+                    res.mpesaReceiptNumber ||
+                    existingTx?.mpesaReceiptNumber ||
+                    ''
+                  ).slice(0, 64),
+                  updatedAt: serverTimestamp(),
+                });
+              } catch (txErr) {
+                logFirestoreError(txErr, OperationType.UPDATE, `paymentTransactions/${txDocId}`);
+              }
+            }
+
+            if (res.status === 'completed') {
+              const plan =
+                res.plan || plansRef.current.find((p) => p.id === targetPlanId);
+              if (plan) {
+                const currentSub = subscriptionRef.current;
+                const existingExp = currentSub?.expiresAt;
+                const baseMs =
+                  existingExp && Date.parse(existingExp) > Date.now()
+                    ? Date.parse(existingExp)
+                    : Date.now();
+                const expiresAt = new Date(
+                  baseMs + plan.durationDays * 24 * 60 * 60 * 1000,
+                ).toISOString();
+
+                try {
+                  await setDoc(doc(db, 'subscriptions', user.uid), {
+                    userId: user.uid,
+                    tier: plan.id,
+                    planName: plan.name.slice(0, 80),
+                    status: 'active',
+                    recordingMinutesLimit: plan.recordingMinutesLimit,
+                    aiMessagesPerDayLimit: plan.aiMessagesPerDayLimit,
+                    storageLimitMb: plan.storageLimitMb,
+                    lastReceiptNumber: (res.mpesaReceiptNumber || '').slice(0, 64),
+                    lastTransactionId: txDocId.slice(0, 128),
+                    expiresAt: expiresAt.slice(0, 40),
+                    updatedAt: serverTimestamp(),
+                  });
+                } catch (subErr) {
+                  logFirestoreError(subErr, OperationType.WRITE, `subscriptions/${user.uid}`);
+                }
+
+                const notifId = makeDocId('notif_mpesa');
+                try {
+                  await setDoc(doc(db, 'notifications', notifId), {
+                    userId: user.uid,
+                    type: 'system',
+                    title: `${plan.name} Activated`.slice(0, 160),
+                    message: `M-Pesa payment confirmed${res.mpesaReceiptNumber ? ` (Receipt ${res.mpesaReceiptNumber})` : ''}. Your workspace limits have been upgraded.`.slice(
+                      0,
+                      500,
+                    ),
+                    read: false,
+                    linkTab: 'settings',
+                    createdAt: serverTimestamp(),
+                  });
+                } catch (notifErr) {
+                  logFirestoreError(notifErr, OperationType.CREATE, `notifications/${notifId}`);
+                }
+              }
+
+            setPendingCheckoutId(null);
+            setPendingPlanId(null);
+            setSelectedPlanId(null);
+            notify('M-Pesa payment confirmed', 'Your premium tier has been activated.', 'success');
+          } else {
+            setPendingCheckoutId(null);
+            setPendingPlanId(null);
+            notify(
+              res.status === 'cancelled' ? 'M-Pesa payment cancelled' : 'M-Pesa payment failed',
+              res.resultDesc || 'You can retry the upgrade whenever ready.',
+              'error',
+            );
           }
-          setPendingCheckoutId(null);
-          await loadBillingData();
-          notify(
-            res.status === 'cancelled' ? 'M-Pesa payment cancelled' : 'M-Pesa payment failed',
-            res.resultDesc || 'You can retry the upgrade whenever ready.',
-            'error',
-          );
         } else if (!silent) {
           notify('Waiting for M-Pesa PIN', res.resultDesc || 'Complete the prompt on your phone.', 'info');
         }
@@ -202,20 +390,35 @@ export function SettingsView({
         setCheckingPayment(false);
       }
     },
-    [loadBillingData, notify],
+    [notify, pendingPlanId, user],
   );
 
   const handleInitiateMpesaUpgrade = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedPlanId || !mpesaPhone.trim()) return;
+    if (!user || !selectedPlanId || !mpesaPhone.trim()) return;
+    if (!mpesaConfigured) {
+      notify(
+        'M-Pesa Daraja not configured',
+        mpesaConfigNotice ||
+          'Add valid MPESA_CONSUMER_KEY, MPESA_CONSUMER_SECRET, MPESA_SHORTCODE, and MPESA_PASSKEY in server Secrets.',
+        'info',
+      );
+      return;
+    }
 
     setInitiatingStk(true);
     try {
       const res = await apiJson<{
+        transactionId: string;
         checkoutRequestId: string;
+        merchantRequestId: string;
         customerMessage: string;
+        responseDescription?: string;
         amountKes: number;
+        planId: 'scholar_monthly' | 'semester_pro';
+        planName: string;
         phoneMasked: string;
+        environment: 'sandbox' | 'production';
       }>('/api/payments/mpesa/stk-push', {
         method: 'POST',
         body: JSON.stringify({
@@ -224,18 +427,41 @@ export function SettingsView({
         }),
       });
 
+      const txDocId = res.transactionId || toSafeTxDocId(res.checkoutRequestId);
+      try {
+        await setDoc(doc(db, 'paymentTransactions', txDocId), {
+          userId: user.uid,
+          planId: res.planId,
+          planName: (res.planName || '').slice(0, 80),
+          amountKes: res.amountKes,
+          phoneMasked: (res.phoneMasked || '').slice(0, 24),
+          merchantRequestId: (res.merchantRequestId || '').slice(0, 128),
+          checkoutRequestId: res.checkoutRequestId.slice(0, 128),
+          mpesaReceiptNumber: '',
+          status: 'pending',
+          resultCode: 0,
+          resultDesc: (res.responseDescription || res.customerMessage || '').slice(0, 300),
+          environment: res.environment === 'production' ? 'production' : 'sandbox',
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      } catch (txErr) {
+        logFirestoreError(txErr, OperationType.CREATE, `paymentTransactions/${txDocId}`);
+      }
+
       setPendingCheckoutId(res.checkoutRequestId);
+      setPendingPlanId(res.planId);
       notify(
         'M-Pesa STK Push sent',
         `${res.customerMessage} (${res.phoneMasked} · KES ${res.amountKes})`,
         'success',
       );
-      await loadBillingData();
 
       if (pollTimerRef.current !== null) {
         window.clearInterval(pollTimerRef.current);
       }
       let attempts = 0;
+      const chosenPlan = res.planId;
       pollTimerRef.current = window.setInterval(() => {
         attempts += 1;
         if (attempts > 12) {
@@ -245,7 +471,7 @@ export function SettingsView({
           }
           return;
         }
-        handleQueryCheckoutStatus(res.checkoutRequestId, true);
+        handleQueryCheckoutStatus(res.checkoutRequestId, true, chosenPlan);
       }, 5000);
     } catch (err) {
       notify(
@@ -306,20 +532,25 @@ export function SettingsView({
     setSavingProfile(true);
     try {
       await updateDoc(doc(db, 'users', user.uid), {
-        fullName: fullName.trim(),
-        university: university.trim(),
-        faculty: faculty.trim(),
-        course: course.trim(),
-        yearOfStudy: yearOfStudy.trim(),
-        semester: semester.trim(),
-        academicInterests: academicInterests.trim(),
-        studyPreferences: studyPreferences.trim(),
+        fullName: fullName.trim().slice(0, 120),
+        university: university.trim().slice(0, 160),
+        faculty: faculty.trim().slice(0, 160),
+        course: course.trim().slice(0, 160),
+        yearOfStudy: yearOfStudy.trim().slice(0, 40),
+        semester: semester.trim().slice(0, 40),
+        academicInterests: academicInterests.trim().slice(0, 400),
+        studyPreferences: studyPreferences.trim().slice(0, 400),
         onboardingCompleted: true,
         updatedAt: serverTimestamp(),
       });
       notify('Academic profile updated', undefined, 'success');
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `users/${user.uid}`);
+      logFirestoreError(err, OperationType.UPDATE, `users/${user.uid}`);
+      notify(
+        'Could not update profile',
+        err instanceof Error ? err.message : 'Please check your entries and try again.',
+        'error',
+      );
     } finally {
       setSavingProfile(false);
     }
@@ -502,7 +733,7 @@ export function SettingsView({
           </div>
           <button
             type="button"
-            onClick={() => loadBillingData()}
+            onClick={() => loadBillingPlans()}
             disabled={billingLoading}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
           >
@@ -512,8 +743,12 @@ export function SettingsView({
         </div>
 
         {!mpesaConfigured && (
-          <div className="p-3.5 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 text-xs text-amber-900 dark:text-amber-200">
-            M-Pesa Daraja gateway credentials are not yet configured in server Secrets (<code>MPESA_CONSUMER_KEY</code>, <code>MPESA_CONSUMER_SECRET</code>, <code>MPESA_SHORTCODE</code>, <code>MPESA_PASSKEY</code>). Plans below will activate live STK Push prompts as soon as credentials are added.
+          <div className="p-4 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 text-xs text-amber-900 dark:text-amber-200 space-y-1.5">
+            <p className="font-semibold">M-Pesa Daraja Setup Required ({mpesaEnv})</p>
+            <p>
+              {mpesaConfigNotice ||
+                'Add MPESA_CONSUMER_KEY, MPESA_CONSUMER_SECRET, MPESA_SHORTCODE (sandbox Paybill 174379), and MPESA_PASSKEY in AI Studio Settings > Secrets to enable live STK Push.'}
+            </p>
           </div>
         )}
 
@@ -597,11 +832,15 @@ export function SettingsView({
               />
               <button
                 type="submit"
-                disabled={initiatingStk}
+                disabled={initiatingStk || !mpesaConfigured}
                 className="inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg bg-emerald-700 text-white hover:bg-emerald-800 disabled:opacity-50 shrink-0 cursor-pointer"
               >
                 {initiatingStk ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Smartphone className="w-3.5 h-3.5" />}
-                {initiatingStk ? 'Sending Prompt...' : 'Send M-Pesa Prompt'}
+                {initiatingStk
+                  ? 'Sending Prompt...'
+                  : !mpesaConfigured
+                    ? 'Daraja Secrets Required'
+                    : 'Send M-Pesa Prompt'}
               </button>
             </div>
           </form>

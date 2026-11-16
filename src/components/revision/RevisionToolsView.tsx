@@ -13,7 +13,7 @@ import { deleteDoc, doc, serverTimestamp, setDoc, updateDoc } from 'firebase/fir
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../ui/ToastContext';
 import { apiJson } from '../../lib/api';
-import { db, formatFirestoreDate, handleFirestoreError, makeDocId, OperationType } from '../../lib/firebase';
+import { db, formatFirestoreDate, handleFirestoreError, logFirestoreError, makeDocId, OperationType } from '../../lib/firebase';
 import type {
   Flashcard,
   GeneratedNote,
@@ -43,6 +43,16 @@ interface GradedResultItem {
   maxMarks: number;
   isCorrect: boolean;
   feedback: string;
+}
+
+function safeParseQuestions(json?: string): QuizQuestion[] {
+  if (!json) return [];
+  try {
+    const parsed = JSON.parse(json);
+    return Array.isArray(parsed) ? (parsed as QuizQuestion[]) : [];
+  } catch {
+    return [];
+  }
 }
 
 export function RevisionToolsView({
@@ -145,13 +155,13 @@ export function RevisionToolsView({
       const newQuiz: Quiz = {
         id: quizId,
         userId: user.uid,
-        title: `${unitCode || 'Study'} — ${topic || (quizMode === 'mock_exam' ? 'Mock Examination' : 'Revision Quiz')}`,
-        unitCode,
-        topic,
+        title: `${unitCode || 'Study'} — ${topic || (quizMode === 'mock_exam' ? 'Mock Examination' : 'Revision Quiz')}`.slice(0, 200),
+        unitCode: unitCode.trim().slice(0, 32),
+        topic: topic.trim().slice(0, 160),
         difficulty,
         mode: quizMode,
-        durationMinutes: quizMode === 'mock_exam' ? durationMinutes : 0,
-        questionsJson: JSON.stringify(res.questions),
+        durationMinutes: quizMode === 'mock_exam' ? Math.max(0, durationMinutes) : 0,
+        questionsJson: JSON.stringify(res.questions).slice(0, 120000),
       };
 
       await setDoc(doc(db, 'quizzes', quizId), {
@@ -177,7 +187,11 @@ export function RevisionToolsView({
 
   const handleSubmitQuiz = async () => {
     if (!user || !activeQuiz) return;
-    const questions: QuizQuestion[] = JSON.parse(activeQuiz.questionsJson || '[]');
+    const questions = safeParseQuestions(activeQuiz.questionsJson);
+    if (questions.length === 0) {
+      notify('Invalid quiz data', 'This quiz has no valid questions to grade.', 'error');
+      return;
+    }
     setGrading(true);
     try {
       const graded = await apiJson<{
@@ -193,11 +207,11 @@ export function RevisionToolsView({
       await setDoc(doc(db, 'quizAttempts', makeDocId('att')), {
         userId: user.uid,
         quizId: activeQuiz.id,
-        quizTitle: activeQuiz.title,
-        unitCode: activeQuiz.unitCode || '',
-        score: graded.score,
-        maxScore: graded.maxScore,
-        resultsJson: JSON.stringify(graded.results),
+        quizTitle: (activeQuiz.title || 'Quiz').slice(0, 200),
+        unitCode: (activeQuiz.unitCode || '').slice(0, 32),
+        score: Math.max(0, graded.score),
+        maxScore: Math.max(0, graded.maxScore),
+        resultsJson: JSON.stringify(graded.results).slice(0, 120000),
         createdAt: serverTimestamp(),
       });
       notify('Quiz marked & saved', `Score: ${graded.score} / ${graded.maxScore}`, 'success');
@@ -230,12 +244,15 @@ export function RevisionToolsView({
       });
 
       for (const card of res.flashcards) {
+        const cleanFront = (card.front || '').trim().slice(0, 1000);
+        const cleanBack = (card.back || '').trim().slice(0, 3000);
+        if (!cleanFront || !cleanBack) continue;
         await setDoc(doc(db, 'flashcards', makeDocId('fc')), {
           userId: user.uid,
-          unitCode,
-          topic: card.topic || topic || 'General',
-          front: card.front,
-          back: card.back,
+          unitCode: unitCode.trim().slice(0, 32),
+          topic: (card.topic || topic || 'General').slice(0, 160),
+          front: cleanFront,
+          back: cleanBack,
           mastery: 'new',
           reviewCount: 0,
           createdAt: serverTimestamp(),
@@ -256,10 +273,10 @@ export function RevisionToolsView({
     try {
       await setDoc(doc(db, 'flashcards', makeDocId('fc')), {
         userId: user.uid,
-        unitCode,
-        topic: topic || 'Custom Card',
-        front: manualFront.trim(),
-        back: manualBack.trim(),
+        unitCode: unitCode.trim().slice(0, 32),
+        topic: (topic || 'Custom Card').slice(0, 160),
+        front: manualFront.trim().slice(0, 1000),
+        back: manualBack.trim().slice(0, 3000),
         mastery: 'new',
         reviewCount: 0,
         createdAt: serverTimestamp(),
@@ -298,7 +315,7 @@ export function RevisionToolsView({
     : null;
 
   const activeQuestions: QuizQuestion[] = activeQuiz
-    ? JSON.parse(activeQuiz.questionsJson || '[]')
+    ? safeParseQuestions(activeQuiz.questionsJson)
     : [];
 
   return (
@@ -763,7 +780,15 @@ export function RevisionToolsView({
 
                   <button
                     type="button"
-                    onClick={() => deleteDoc(doc(db, 'flashcards', currentCard.id))}
+                    onClick={async () => {
+                      try {
+                        await deleteDoc(doc(db, 'flashcards', currentCard.id));
+                        notify('Flashcard deleted', undefined, 'info');
+                      } catch (err) {
+                        logFirestoreError(err, OperationType.DELETE, `flashcards/${currentCard.id}`);
+                        notify('Could not delete flashcard', undefined, 'error');
+                      }
+                    }}
                     className="p-2 text-slate-400 hover:text-red-600 cursor-pointer"
                     title="Delete card"
                   >

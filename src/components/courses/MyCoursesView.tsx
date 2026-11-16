@@ -73,8 +73,8 @@ export function MyCoursesView({
   const handleSaveUnit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
-    const cleanCode = unitCode.trim().toUpperCase();
-    const cleanName = unitName.trim();
+    const cleanCode = unitCode.trim().toUpperCase().slice(0, 32);
+    const cleanName = unitName.trim().slice(0, 160);
     if (cleanCode.length < 2 || cleanName.length < 2) {
       notify('Incomplete unit details', 'Enter a valid unit code and unit title.', 'error');
       return;
@@ -86,11 +86,11 @@ export function MyCoursesView({
         await updateDoc(doc(db, 'studentUnits', editingUnitId), {
           unitCode: cleanCode,
           unitName: cleanName,
-          university: university.trim(),
-          course: course.trim(),
-          semester: semester.trim(),
-          lecturerName: lecturerName.trim(),
-          examDate: examDate.trim(),
+          university: university.trim().slice(0, 160),
+          course: course.trim().slice(0, 160),
+          semester: semester.trim().slice(0, 40),
+          lecturerName: lecturerName.trim().slice(0, 120),
+          examDate: examDate.trim().slice(0, 32),
           updatedAt: serverTimestamp(),
         });
         notify('Unit updated', `${cleanCode} — ${cleanName}`, 'success');
@@ -100,11 +100,11 @@ export function MyCoursesView({
           userId: user.uid,
           unitCode: cleanCode,
           unitName: cleanName,
-          university: university.trim(),
-          course: course.trim(),
-          semester: semester.trim(),
-          lecturerName: lecturerName.trim(),
-          examDate: examDate.trim(),
+          university: university.trim().slice(0, 160),
+          course: course.trim().slice(0, 160),
+          semester: semester.trim().slice(0, 40),
+          lecturerName: lecturerName.trim().slice(0, 120),
+          examDate: examDate.trim().slice(0, 32),
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
@@ -137,15 +137,20 @@ export function MyCoursesView({
 
   const handleCreateReminder = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !remTitle.trim() || !remDueDate.trim()) return;
+    if (!user) return;
+    const cleanDueDate = remDueDate.trim().slice(0, 32);
+    if (cleanDueDate.length < 4) {
+      notify('Invalid date', 'Select a valid due date for the reminder.', 'error');
+      return;
+    }
     setSavingReminder(true);
     const id = makeDocId('rem');
     try {
       await setDoc(doc(db, 'studyReminders', id), {
         userId: user.uid,
-        unitCode: remUnitCode.trim().toUpperCase(),
-        title: remTitle.trim(),
-        dueDate: remDueDate.trim(),
+        unitCode: remUnitCode.trim().toUpperCase().slice(0, 32),
+        title: remTitle.trim().slice(0, 160),
+        dueDate: cleanDueDate,
         enabled: true,
         createdAt: serverTimestamp(),
       });

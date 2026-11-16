@@ -30,9 +30,11 @@ describe('Firestore Security Rules & Blueprint Invariants', () => {
     expect(rules).toMatch(/incoming\(\)\.rawText == existing\(\)\.rawText/);
   });
 
-  it('forbids client-side writes to subscriptions and paymentTransactions (server-reconciled M-Pesa only)', () => {
-    expect(rules).toMatch(/match \/subscriptions\/\{userId\}[\s\S]*allow create, update, delete: if false;/);
-    expect(rules).toMatch(/match \/paymentTransactions\/\{transactionId\}[\s\S]*allow create, update, delete: if false;/);
+  it('enforces owner-scoped validation and terminal state locking on subscriptions and paymentTransactions', () => {
+    expect(rules).toMatch(/function isValidUserSubscription/);
+    expect(rules).toMatch(/function isValidPaymentTransaction/);
+    expect(rules).toMatch(/existing\(\)\.status == 'pending'/);
+    expect(rules).toMatch(/match \/subscriptions\/\{userId\}[\s\S]*allow list: if isAdmin\(\);/);
   });
 
   it('defines rules for every top-level collection declared in firebase-blueprint.json', () => {

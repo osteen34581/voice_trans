@@ -419,7 +419,7 @@ export function RecordLectureView({
               userId: user.uid,
               type: 'transcription',
               title: 'Transcription completed',
-              message: `"${title.trim()}" is ready to review and convert into study notes.`,
+              message: `"${title.trim().slice(0, 120)}" is ready to review and convert into study notes.`.slice(0, 500),
               read: false,
               linkTab: 'lectures',
               createdAt: serverTimestamp(),
@@ -430,7 +430,7 @@ export function RecordLectureView({
             const { updateDoc } = await import('firebase/firestore');
             await updateDoc(doc(db, 'lectures', lectureId), {
               transcriptionStatus: 'failed',
-              transcriptionError: err instanceof Error ? err.message : 'Transcription failed',
+              transcriptionError: (err instanceof Error ? err.message : 'Transcription failed').slice(0, 500),
               updatedAt: serverTimestamp(),
             }).catch(() => {});
             notify(

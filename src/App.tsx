@@ -30,7 +30,7 @@ import { RevisionToolsView } from './components/revision/RevisionToolsView';
 import { MyCoursesView } from './components/courses/MyCoursesView';
 import { SettingsView } from './components/settings/SettingsView';
 import { AdminDashboardView } from './components/admin/AdminDashboardView';
-import { db } from './lib/firebase';
+import { db, logFirestoreError, OperationType } from './lib/firebase';
 import type {
   AiConversation,
   AiMaterial,
@@ -112,64 +112,68 @@ function WorkspaceApp() {
     }
 
     const uid = user.uid;
+    const onErr = (path: string) => (err: unknown) => {
+      logFirestoreError(err, OperationType.LIST, path);
+    };
+
     const unsubs = [
       onSnapshot(query(collection(db, 'studentUnits'), where('userId', '==', uid)), (snap) => {
         setUnits(sortDescByTime(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<StudentUnit, 'id'>) }))));
-      }),
+      }, onErr('studentUnits')),
       onSnapshot(query(collection(db, 'lectures'), where('userId', '==', uid)), (snap) => {
         setLectures(sortDescByTime(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Lecture, 'id'>) }))));
-      }),
+      }, onErr('lectures')),
       onSnapshot(query(collection(db, 'transcripts'), where('userId', '==', uid)), (snap) => {
         setTranscripts(sortDescByTime(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Transcript, 'id'>) }))));
-      }),
+      }, onErr('transcripts')),
       onSnapshot(query(collection(db, 'generatedNotes'), where('userId', '==', uid)), (snap) => {
         setNotes(sortDescByTime(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<GeneratedNote, 'id'>) }))));
-      }),
+      }, onErr('generatedNotes')),
       onSnapshot(query(collection(db, 'documents'), where('userId', '==', uid)), (snap) => {
         setDocuments(sortDescByTime(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<StudyDocument, 'id'>) }))));
-      }),
+      }, onErr('documents')),
       onSnapshot(query(collection(db, 'resources'), where('status', '==', 'approved')), (snap) => {
         setApprovedResources(
           sortDescByTime(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<RevisionResource, 'id'>) }))),
         );
-      }),
+      }, onErr('resources/approved')),
       onSnapshot(query(collection(db, 'resources'), where('submittedBy', '==', uid)), (snap) => {
         setMySubmittedResources(
           sortDescByTime(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<RevisionResource, 'id'>) }))),
         );
-      }),
+      }, onErr('resources/submittedBy')),
       onSnapshot(query(collection(db, 'resourceBookmarks'), where('userId', '==', uid)), (snap) => {
         setBookmarks(sortDescByTime(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<ResourceBookmark, 'id'>) }))));
-      }),
+      }, onErr('resourceBookmarks')),
       onSnapshot(query(collection(db, 'aiMaterials'), where('userId', '==', uid)), (snap) => {
         setMaterials(sortDescByTime(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<AiMaterial, 'id'>) }))));
-      }),
+      }, onErr('aiMaterials')),
       onSnapshot(query(collection(db, 'aiConversations'), where('userId', '==', uid)), (snap) => {
         setConversations(
           sortDescByTime(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<AiConversation, 'id'>) }))),
         );
-      }),
+      }, onErr('aiConversations')),
       onSnapshot(query(collection(db, 'flashcards'), where('userId', '==', uid)), (snap) => {
         setFlashcards(sortDescByTime(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Flashcard, 'id'>) }))));
-      }),
+      }, onErr('flashcards')),
       onSnapshot(query(collection(db, 'quizzes'), where('userId', '==', uid)), (snap) => {
         setQuizzes(sortDescByTime(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Quiz, 'id'>) }))));
-      }),
+      }, onErr('quizzes')),
       onSnapshot(query(collection(db, 'quizAttempts'), where('userId', '==', uid)), (snap) => {
         setQuizAttempts(
           sortDescByTime(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<QuizAttempt, 'id'>) }))),
         );
-      }),
+      }, onErr('quizAttempts')),
       onSnapshot(query(collection(db, 'notifications'), where('userId', '==', uid)), (snap) => {
         setNotifications(
           sortDescByTime(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<AppNotification, 'id'>) }))),
         );
-      }),
+      }, onErr('notifications')),
       onSnapshot(query(collection(db, 'studyReminders'), where('userId', '==', uid)), (snap) => {
         setReminders(
           sortDescByTime(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<StudyReminder, 'id'>) }))),
         );
-      }),
+      }, onErr('studyReminders')),
     ];
 
     return () => unsubs.forEach((u) => u());

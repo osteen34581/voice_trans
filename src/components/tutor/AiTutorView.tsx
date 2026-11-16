@@ -25,7 +25,7 @@ import {
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../ui/ToastContext';
 import { apiJson } from '../../lib/api';
-import { db, handleFirestoreError, makeDocId, OperationType } from '../../lib/firebase';
+import { db, handleFirestoreError, logFirestoreError, makeDocId, OperationType } from '../../lib/firebase';
 import type {
   AiConversation,
   AiMaterial,
@@ -89,7 +89,7 @@ export function AiTutorView({ conversations, materials, units }: AiTutorViewProp
         });
         setMessages(rows);
       },
-      (err) => console.warn('Messages snapshot:', err.message),
+      (err) => logFirestoreError(err, OperationType.LIST, 'aiMessages'),
     );
     return () => unsub();
   }, [user, activeConv?.id]);
@@ -111,7 +111,7 @@ export function AiTutorView({ conversations, materials, units }: AiTutorViewProp
       (snap) => {
         setChunks(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<DocumentChunk, 'id'>) })));
       },
-      (err) => console.warn('Chunks snapshot:', err.message),
+      (err) => logFirestoreError(err, OperationType.LIST, 'documentChunks'),
     );
     return () => unsub();
   }, [user, selectedMaterialId, activeConv?.materialId]);
@@ -122,10 +122,10 @@ export function AiTutorView({ conversations, materials, units }: AiTutorViewProp
     try {
       await setDoc(doc(db, 'aiConversations', id), {
         userId: user.uid,
-        title: `Study Session ${conversations.length + 1}`,
+        title: `Study Session ${conversations.length + 1}`.slice(0, 160),
         teachingMode,
-        materialId: selectedMaterialId,
-        unitCode: selectedUnitCode,
+        materialId: selectedMaterialId.slice(0, 128),
+        unitCode: selectedUnitCode.slice(0, 32),
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -144,8 +144,8 @@ export function AiTutorView({ conversations, materials, units }: AiTutorViewProp
         userId: user.uid,
         title: (initialTitle || `Voice Session ${conversations.length + 1}`).slice(0, 160),
         teachingMode,
-        materialId: selectedMaterialId,
-        unitCode: selectedUnitCode,
+        materialId: selectedMaterialId.slice(0, 128),
+        unitCode: selectedUnitCode.slice(0, 32),
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -196,13 +196,13 @@ export function AiTutorView({ conversations, materials, units }: AiTutorViewProp
       const materialId = makeDocId('mat');
       await setDoc(doc(db, 'aiMaterials', materialId), {
         userId: user.uid,
-        title: file.name.replace(/\.[^.]+$/, ''),
-        unitCode: selectedUnitCode,
-        fileName: processed.fileName,
-        mimeType: processed.mimeType,
-        fileSizeBytes: processed.fileSizeBytes,
+        title: (file.name.replace(/\.[^.]+$/, '') || 'Uploaded Material').slice(0, 200),
+        unitCode: selectedUnitCode.slice(0, 32),
+        fileName: (processed.fileName || file.name).slice(0, 200),
+        mimeType: (processed.mimeType || 'application/octet-stream').slice(0, 100),
+        fileSizeBytes: Math.max(0, processed.fileSizeBytes || 0),
         chunkCount: processed.chunks.length,
-        extractedPreview: processed.extractedPreview,
+        extractedPreview: (processed.extractedPreview || '').slice(0, 2000),
         createdAt: serverTimestamp(),
       });
 
@@ -211,10 +211,10 @@ export function AiTutorView({ conversations, materials, units }: AiTutorViewProp
         await setDoc(doc(db, 'documentChunks', makeDocId('chk')), {
           userId: user.uid,
           materialId,
-          chunkIndex: ch.chunkIndex,
-          sectionLabel: ch.sectionLabel,
-          text: ch.text,
-          embedding: ch.embedding,
+          chunkIndex: Math.max(0, ch.chunkIndex),
+          sectionLabel: (ch.sectionLabel || '').slice(0, 120),
+          text: (ch.text || '').slice(0, 8000),
+          embedding: Array.isArray(ch.embedding) ? ch.embedding.slice(0, 3072) : [],
           createdAt: serverTimestamp(),
         });
       }
@@ -256,8 +256,8 @@ export function AiTutorView({ conversations, materials, units }: AiTutorViewProp
           userId: user.uid,
           title: promptText.trim().slice(0, 48),
           teachingMode,
-          materialId: selectedMaterialId,
-          unitCode: selectedUnitCode,
+          materialId: selectedMaterialId.slice(0, 128),
+          unitCode: selectedUnitCode.slice(0, 32),
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
@@ -266,8 +266,8 @@ export function AiTutorView({ conversations, materials, units }: AiTutorViewProp
         await updateDoc(doc(db, 'aiConversations', convId), {
           title: promptText.trim().slice(0, 48),
           teachingMode,
-          materialId: selectedMaterialId,
-          unitCode: selectedUnitCode,
+          materialId: selectedMaterialId.slice(0, 128),
+          unitCode: selectedUnitCode.slice(0, 32),
           updatedAt: serverTimestamp(),
         });
       }
@@ -277,7 +277,7 @@ export function AiTutorView({ conversations, materials, units }: AiTutorViewProp
         userId: user.uid,
         conversationId: convId,
         role: 'user',
-        content: promptText.trim(),
+        content: promptText.trim().slice(0, 40000),
         createdAt: serverTimestamp(),
       });
 
@@ -285,14 +285,14 @@ export function AiTutorView({ conversations, materials, units }: AiTutorViewProp
       const res = await apiJson<{ answer: string; citationsSummary: string }>('/api/ai/tutor', {
         method: 'POST',
         body: JSON.stringify({
-          question: promptText.trim(),
+          question: promptText.trim().slice(0, 4000),
           teachingMode,
-          unitCode: selectedUnitCode,
-          history: messages.slice(-8).map((m) => ({ role: m.role, content: m.content })),
-          chunks: chunks.map((c) => ({
-            materialTitle: activeMaterial?.title || 'Uploaded Material',
-            sectionLabel: c.sectionLabel || `Section ${c.chunkIndex + 1}`,
-            text: c.text,
+          unitCode: selectedUnitCode.slice(0, 32),
+          history: messages.slice(-8).map((m) => ({ role: m.role, content: m.content.slice(0, 12000) })),
+          chunks: chunks.slice(0, 120).map((c) => ({
+            materialTitle: (activeMaterial?.title || 'Uploaded Material').slice(0, 200),
+            sectionLabel: (c.sectionLabel || `Section ${c.chunkIndex + 1}`).slice(0, 120),
+            text: c.text.slice(0, 8000),
             embedding: c.embedding,
           })),
         }),
@@ -302,8 +302,8 @@ export function AiTutorView({ conversations, materials, units }: AiTutorViewProp
         userId: user.uid,
         conversationId: convId,
         role: 'assistant',
-        content: res.answer,
-        citations: res.citationsSummary,
+        content: (res.answer || '').slice(0, 40000),
+        citations: (res.citationsSummary || '').slice(0, 4000),
         createdAt: serverTimestamp(),
       });
     } catch (err) {

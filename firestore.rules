@@ -415,6 +415,56 @@ service cloud.firestore {
         && data.updatedAt is timestamp;
     }
 
+    function isValidUserSubscription(data, userId) {
+      return data.keys().hasAll([
+          'userId', 'tier', 'planName', 'status',
+          'recordingMinutesLimit', 'aiMessagesPerDayLimit', 'storageLimitMb', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'userId', 'tier', 'planName', 'status',
+          'recordingMinutesLimit', 'aiMessagesPerDayLimit', 'storageLimitMb',
+          'lastReceiptNumber', 'lastTransactionId', 'expiresAt', 'updatedAt'
+        ])
+        && data.userId is string && isValidId(data.userId) && data.userId == userId
+        && data.tier in ['free', 'scholar_monthly', 'semester_pro']
+        && data.planName is string && data.planName.size() >= 2 && data.planName.size() <= 80
+        && data.status in ['active', 'expired']
+        && data.recordingMinutesLimit is number && data.recordingMinutesLimit >= 0 && data.recordingMinutesLimit <= 10000
+        && data.aiMessagesPerDayLimit is number && data.aiMessagesPerDayLimit >= 0 && data.aiMessagesPerDayLimit <= 5000
+        && data.storageLimitMb is number && data.storageLimitMb >= 0 && data.storageLimitMb <= 20480
+        && (!('lastReceiptNumber' in data) || (data.lastReceiptNumber is string && data.lastReceiptNumber.size() <= 64))
+        && (!('lastTransactionId' in data) || (data.lastTransactionId is string && data.lastTransactionId.size() <= 128))
+        && (!('expiresAt' in data) || (data.expiresAt is string && data.expiresAt.size() <= 40))
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidPaymentTransaction(data) {
+      return data.keys().hasAll([
+          'userId', 'planId', 'planName', 'amountKes', 'phoneMasked',
+          'checkoutRequestId', 'status', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'userId', 'planId', 'planName', 'amountKes', 'phoneMasked',
+          'merchantRequestId', 'checkoutRequestId', 'mpesaReceiptNumber',
+          'status', 'resultCode', 'resultDesc', 'environment',
+          'createdAt', 'updatedAt'
+        ])
+        && data.userId is string && isValidId(data.userId)
+        && data.planId in ['scholar_monthly', 'semester_pro']
+        && data.planName is string && data.planName.size() >= 2 && data.planName.size() <= 80
+        && data.amountKes is number && data.amountKes > 0 && data.amountKes <= 100000
+        && data.phoneMasked is string && data.phoneMasked.size() >= 4 && data.phoneMasked.size() <= 24
+        && (!('merchantRequestId' in data) || (data.merchantRequestId is string && data.merchantRequestId.size() <= 128))
+        && data.checkoutRequestId is string && data.checkoutRequestId.size() >= 4 && data.checkoutRequestId.size() <= 128
+        && (!('mpesaReceiptNumber' in data) || (data.mpesaReceiptNumber is string && data.mpesaReceiptNumber.size() <= 64))
+        && data.status in ['pending', 'completed', 'failed', 'cancelled']
+        && (!('resultCode' in data) || data.resultCode is number)
+        && (!('resultDesc' in data) || (data.resultDesc is string && data.resultDesc.size() <= 300))
+        && (!('environment' in data) || data.environment in ['sandbox', 'production'])
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
     // --- Collection Rules ---
 
     // Users & Isolated PII
@@ -803,17 +853,49 @@ service cloud.firestore {
       allow update: if isValidId(settingId) && isAdmin() && isValidSystemSetting(incoming()) && incoming().updatedAt == request.time;
     }
 
-    // Server-Reconciled Subscriptions & M-Pesa Payment Transactions (Client Writes Strictly Denied)
+    // Subscriptions & M-Pesa Payment Transactions (Owner-Scoped with Terminal State Locking)
     match /subscriptions/{userId} {
       allow get: if isValidId(userId) && isVerified() && (isOwner(userId) || isAdmin());
       allow list: if isAdmin();
-      allow create, update, delete: if false;
+      allow create: if isValidId(userId) && isVerified() && isNotSuspended()
+        && isOwner(userId)
+        && isValidUserSubscription(incoming(), userId)
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(userId) && isVerified() && isNotSuspended()
+        && isOwner(userId)
+        && isValidUserSubscription(incoming(), userId)
+        && incoming().userId == existing().userId
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'tier', 'planName', 'status', 'recordingMinutesLimit',
+          'aiMessagesPerDayLimit', 'storageLimitMb', 'lastReceiptNumber',
+          'lastTransactionId', 'expiresAt', 'updatedAt'
+        ]);
+      allow delete: if isValidId(userId) && isAdmin();
     }
 
     match /paymentTransactions/{transactionId} {
       allow get: if isValidId(transactionId) && isVerified() && (existing().userId == request.auth.uid || isAdmin());
       allow list: if isVerified() && (resource.data.userId == request.auth.uid || isAdmin());
-      allow create, update, delete: if false;
+      allow create: if isValidId(transactionId) && isVerified() && isNotSuspended()
+        && isValidPaymentTransaction(incoming())
+        && incoming().userId == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(transactionId) && isVerified() && isNotSuspended()
+        && isValidPaymentTransaction(incoming())
+        && existing().userId == request.auth.uid
+        && existing().status == 'pending'
+        && incoming().userId == existing().userId
+        && incoming().planId == existing().planId
+        && incoming().amountKes == existing().amountKes
+        && incoming().checkoutRequestId == existing().checkoutRequestId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'status', 'resultCode', 'resultDesc', 'mpesaReceiptNumber', 'updatedAt'
+        ]);
+      allow delete: if isValidId(transactionId) && isAdmin();
     }
   }
 }
