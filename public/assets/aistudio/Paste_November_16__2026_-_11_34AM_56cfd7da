@@ -1,0 +1,1581 @@
+# MASTER SOFTWARE DEVELOPMENT PROMPT
+# AI ACADEMIC ASSISTANT — COMPLETE MVP
+
+## ROLE AND DEVELOPMENT EXPECTATIONS
+
+Act as a senior full-stack software engineer, software architect, AI engineer, database architect, UI/UX designer, cybersecurity specialist and product development consultant.
+
+Your assignment is to design and develop a complete, professional, production-minded AI-powered academic assistance platform primarily for university students in Kenya.
+
+You are not building a simple demonstration, landing page or static dashboard.
+
+You are building a functional academic productivity platform with interconnected features, persistent data, authentication, audio recording, speech transcription, document processing, AI assistance, academic resource management and administrative controls.
+
+The application must be scalable, secure, responsive, accessible and maintainable.
+
+Work systematically. First inspect the development environment and existing project files. Preserve existing working functionality. Do not unnecessarily overwrite existing configurations or files.
+
+Do not pretend that a feature works if it has not been implemented and tested.
+
+Where an external service requires API keys, implement the integration properly, create environment variable placeholders and explain how to configure it.
+
+Never expose API keys or secret credentials in frontend code.
+
+---
+
+# 1. PROJECT OVERVIEW
+
+Working application name: AI Academic Assistant.
+
+The official brand name is yet to be decided. Keep the product name, logo, colours and other branding elements configurable.
+
+### Product vision
+
+Create a unified academic workspace that helps university students:
+
+1. Record lectures.
+2. Upload previously recorded lectures.
+3. Convert audio into accurate written transcripts.
+4. Convert transcripts into organized academic notes.
+5. Generate editable Word and PDF documents.
+6. Organize lecture materials by university, course, unit and topic.
+7. Access academic revision resources.
+8. Upload academic documents and ask AI questions about them.
+9. Generate revision questions, flashcards and quizzes.
+10. Prepare for examinations using an AI academic tutor.
+
+The main objective is to reduce the burden of manually taking notes while helping students understand and retain academic information.
+
+### Target audience
+
+Primary market: University students in Kenya.
+
+Potential future audiences:
+- College students.
+- TVET students.
+- University lecturers.
+- Academic institutions.
+- Students in other African countries.
+- International students.
+
+The first release should prioritize Kenyan university students.
+
+### Development approach
+
+Build a Minimum Viable Product (MVP) first.
+
+Do not attempt to implement every advanced feature in the initial release.
+
+The first release must provide a complete working student journey, from registration through lecture recording, transcription, document generation, revision and AI assistance.
+
+---
+
+# 2. TECHNOLOGY STACK
+
+Use the following recommended technology stack unless a technical limitation makes an alternative necessary.
+
+## Frontend
+
+- Next.js using the App Router.
+- React.
+- TypeScript.
+- Tailwind CSS.
+- shadcn/ui for accessible interface components.
+- Lucide icons.
+- React Hook Form.
+- Zod for validation.
+- TanStack Query where useful for server-state management.
+
+Build a responsive mobile-first interface.
+
+## Backend
+
+Use Next.js server-side functionality and secure API routes or server actions where appropriate.
+
+Keep business logic separated from UI components.
+
+Use a service-oriented architecture so audio processing, document generation and AI services can be independently maintained.
+
+## Database and authentication
+
+Recommended platform: Supabase.
+
+Use:
+- Supabase PostgreSQL.
+- Supabase Authentication.
+- Supabase Storage.
+- Row Level Security (RLS).
+- Database migrations.
+- Supabase Edge Functions when appropriate.
+
+Authentication must support email and password initially, with Google sign-in as an optional integration.
+
+## AI integration
+
+Design an AI provider abstraction layer.
+
+Support configurable integration with:
+- OpenAI API.
+- Other compatible AI providers in the future.
+
+Use AI for:
+- Summarization.
+- Academic explanations.
+- Question generation.
+- Flashcard generation.
+- Document analysis.
+- Revision assistance.
+- Study planning.
+
+Do not hard-code one model throughout the application.
+
+All model names, limits and provider settings must be configurable through environment variables or secure server-side configuration.
+
+## Audio transcription
+
+Design a separate transcription service.
+
+Support integration with an appropriate speech-to-text provider.
+
+Evaluate providers based on:
+- English transcription accuracy.
+- Support for Kenyan English accents.
+- Swahili support where available.
+- Long audio processing.
+- Cost per audio minute.
+- File-size restrictions.
+- Processing time.
+- Speaker diarization support.
+
+Do not claim that a transcription service supports a language or feature without verifying its documentation.
+
+Implement asynchronous processing for long recordings.
+
+## Document generation
+
+Use suitable libraries for:
+- PDF generation.
+- Microsoft Word DOCX generation.
+- Editable rich-text documents.
+
+Recommended editor: TipTap or an equivalent rich-text editor.
+
+Preserve formatting when exporting documents.
+
+## Deployment
+
+Make the application compatible with:
+- Vercel or another suitable Next.js hosting provider.
+- Supabase hosting services for database and storage.
+- Custom domains.
+- HTTPS.
+- Production environment variables.
+
+Prioritize affordable free tiers during development, but explain their usage limits and possible upgrade requirements.
+
+---
+
+# 3. APPLICATION STRUCTURE
+
+Create the following major areas:
+
+1. Public landing page.
+2. Authentication system.
+3. Student dashboard.
+4. Lecture recording workspace.
+5. Audio transcription workspace.
+6. AI-generated notes workspace.
+7. Document editor.
+8. Academic revision library.
+9. AI academic assistant.
+10. Student academic profile.
+11. Notifications and reminders.
+12. Student settings.
+13. Administrator dashboard.
+
+Use consistent navigation and design throughout the platform.
+
+---
+
+# 4. PUBLIC LANDING PAGE
+
+Create a professional landing page that explains the product.
+
+Include:
+
+### Navigation
+- Logo.
+- Home.
+- Features.
+- How it works.
+- Pricing.
+- About.
+- Sign in.
+- Get started.
+
+### Hero section
+
+Suggested headline:
+
+"Your Lectures. Your Notes. Your AI Study Partner."
+
+Supporting text:
+
+"Record lectures, generate organized notes, access revision materials and understand difficult topics with your personal AI academic assistant."
+
+Include:
+- Get started button.
+- Explore features button.
+- Professional product preview.
+
+### Features section
+
+Present:
+- Smart lecture recording.
+- Automatic transcription.
+- AI-powered lecture notes.
+- Editable PDF and Word documents.
+- Academic revision library.
+- AI academic tutor.
+- Smart examination preparation.
+
+### How it works
+
+Show a simple three-stage workflow:
+
+1. Record or upload your lecture.
+2. Let AI transform it into organized academic notes.
+3. Revise, edit, download and ask questions.
+
+### Pricing section
+
+Initially support a configurable freemium model.
+
+Do not invent actual subscription prices.
+
+### Footer
+
+Include:
+- About.
+- Contact.
+- Privacy policy.
+- Terms of service.
+- Copyright information.
+- Social media links.
+
+---
+
+# 5. AUTHENTICATION AND USER MANAGEMENT
+
+Implement a complete authentication system.
+
+Features:
+- Student registration.
+- Login.
+- Logout.
+- Password reset.
+- Email verification.
+- Google authentication when configured.
+- Protected application routes.
+- Session management.
+- Account settings.
+
+### Student registration fields
+
+- Full name.
+- Email.
+- Password.
+- University.
+- Course or programme.
+- Year of study.
+- Academic interests.
+
+Additional profile fields should be optional.
+
+Do not force students to disclose unnecessary personal information.
+
+After registration, direct students to an onboarding process.
+
+### Academic profile
+
+Allow students to manage:
+- University.
+- Faculty.
+- Course.
+- Academic year.
+- Semester.
+- Units.
+- Personal study preferences.
+
+Allow students to add and remove courses and units.
+
+---
+
+# 6. STUDENT DASHBOARD
+
+Build a modern academic dashboard.
+
+Include:
+
+### Welcome area
+
+Display:
+
+"Welcome back, [Student Name]"
+
+Show a personalized academic overview.
+
+### Dashboard widgets
+
+- Total recorded lectures.
+- Total generated notes.
+- Recent documents.
+- AI study activity.
+- Saved revision materials.
+- Recent AI conversations.
+- Upcoming examination dates.
+- Study progress.
+
+### Quick actions
+
+Buttons for:
+- Record a lecture.
+- Upload audio.
+- Create notes.
+- Ask AI.
+- Browse revision materials.
+- Create a revision quiz.
+
+### Recent activity
+
+Display recently accessed:
+- Lectures.
+- Documents.
+- Revision resources.
+- AI conversations.
+
+All dashboard information must come from actual database records.
+
+Do not use permanent hard-coded sample statistics in the production dashboard.
+
+Provide meaningful empty states for new students.
+
+---
+
+# 7. LECTURE RECORDING MODULE
+
+This is one of the application's most important features.
+
+Implement a functional lecture recording interface.
+
+### Recording interface
+
+Include:
+- Start recording.
+- Pause recording.
+- Resume recording.
+- Stop recording.
+- Recording timer.
+- Audio waveform or visual recording indicator.
+- Microphone permission handling.
+- Recording status.
+- Audio playback.
+- Save recording.
+
+Use the browser MediaRecorder API for supported devices.
+
+### Recording requirements
+
+1. Request microphone permission before recording.
+2. Clearly communicate when recording is active.
+3. Handle denied microphone permissions.
+4. Handle microphone interruptions.
+5. Save recordings securely.
+6. Support appropriate audio formats.
+7. Provide a playback option.
+8. Allow students to rename recordings.
+9. Associate recordings with academic units.
+10. Allow deletion of recordings.
+
+Where possible, use IndexedDB or another suitable local persistence mechanism to protect unfinished recordings from accidental page refreshes.
+
+Implement chunked or resilient uploads for large recordings.
+
+Do not claim guaranteed background recording or locked-screen recording in a browser PWA.
+
+Those capabilities may require a future native Android application.
+
+### Lecture metadata
+
+Allow students to specify:
+- Lecture title.
+- University.
+- Course.
+- Unit.
+- Lecturer name (optional).
+- Lecture date.
+- Additional description.
+
+### Online lecture compatibility
+
+The initial version should support microphone-based recording and uploaded audio.
+
+Design the architecture so future integrations can support approved online classroom workflows.
+
+Do not bypass browser security permissions or meeting platform recording restrictions.
+
+Do not claim automatic Zoom, Google Meet or Microsoft Teams capture until a genuine supported integration has been implemented and tested.
+
+### Audio upload
+
+Support appropriate audio formats such as:
+- MP3.
+- WAV.
+- M4A.
+- WebM.
+
+Validate file size, MIME type and upload integrity.
+
+Provide clear errors for unsupported files.
+
+---
+
+# 8. SPEECH-TO-TEXT TRANSCRIPTION
+
+Once a recording has been saved, allow the student to initiate transcription.
+
+### Processing workflow
+
+1. Upload or locate the audio file.
+2. Validate its format and size.
+3. Create a transcription job.
+4. Send the audio securely to the configured transcription provider.
+5. Process the returned transcript.
+6. Save the transcript in the database.
+7. Associate it with the original recording.
+8. Display processing status.
+9. Notify the student when transcription is complete.
+
+### Statuses
+
+- Uploaded.
+- Queued.
+- Processing.
+- Completed.
+- Failed.
+
+Provide retry functionality for failed jobs.
+
+### Transcript interface
+
+Display:
+- Full transcript.
+- Paragraph organization.
+- Timestamps where available.
+- Speaker labels where supported.
+- Search within transcript.
+- Copy transcript.
+- Edit transcript.
+- Save changes.
+
+Never silently replace the original transcript with an AI-corrected version.
+
+Maintain the original transcription and save edited or AI-enhanced versions separately.
+
+### Important requirements
+
+Allow for transcription uncertainty.
+
+Do not present unclear speech as certain information.
+
+Where supported, identify different speakers.
+
+Do not fabricate speaker identities.
+
+---
+
+# 9. AI LECTURE NOTES GENERATOR
+
+Create an AI-powered processing engine that converts transcripts into structured academic notes.
+
+### Output formats
+
+Allow students to generate:
+
+1. Full lecture transcript.
+2. Detailed lecture notes.
+3. Short lecture summary.
+4. Main concepts.
+5. Key definitions.
+6. Important examples.
+7. Important formulas.
+8. Important dates.
+9. Revision points.
+10. Potential examination questions.
+11. Flashcards.
+
+### Note organization
+
+Generated notes should support:
+
+- Title.
+- Introduction.
+- Main headings.
+- Subheadings.
+- Detailed explanations.
+- Examples.
+- Definitions.
+- Key takeaways.
+- Revision questions.
+
+### AI accuracy requirements
+
+The AI must:
+- Preserve the lecturer's intended meaning.
+- Avoid inventing facts.
+- Clearly distinguish transcript content from additional explanations.
+- Flag uncertain information.
+- Preserve important terminology.
+- Avoid removing essential technical details.
+- Avoid presenting generated examination questions as actual examination predictions.
+
+Allow the student to select the summary length:
+
+- Brief.
+- Standard.
+- Detailed.
+
+Allow students to regenerate notes without deleting their previous versions.
+
+---
+
+# 10. DOCUMENT EDITOR
+
+Build an integrated rich-text editor.
+
+Use TipTap or an equivalent editor.
+
+### Editing features
+
+- Type and edit text.
+- Bold.
+- Italic.
+- Underline.
+- Headings.
+- Paragraphs.
+- Bullet lists.
+- Numbered lists.
+- Tables.
+- Links.
+- Text highlighting.
+- Text alignment.
+- Undo.
+- Redo.
+- Search and replace.
+- Autosave.
+- Manual save.
+
+### Document management
+
+Students must be able to:
+- Create documents.
+- Rename documents.
+- Edit documents.
+- Duplicate documents.
+- Delete documents.
+- Organize documents by course.
+- Search documents.
+- Recover saved versions where version history is implemented.
+
+### Export functionality
+
+Implement actual downloads for:
+
+- PDF.
+- Microsoft Word DOCX.
+- Plain text where appropriate.
+
+Preserve headings, paragraphs, tables and formatting.
+
+Provide print functionality.
+
+### Academic document formatting
+
+Allow optional inclusion of:
+
+- University name.
+- Student course.
+- Unit code.
+- Unit name.
+- Lecturer name.
+- Lecture date.
+
+Do not invent missing academic details.
+
+---
+
+# 11. ACADEMIC REVISION LIBRARY
+
+Create a searchable academic resource library.
+
+### Resource categories
+
+- Lecture notes.
+- Past examination papers.
+- Revision questions.
+- Study guides.
+- Textbooks and references.
+- Video tutorials.
+- Audio learning materials.
+- Flashcards.
+- Practice exercises.
+
+### Resource organization
+
+Use this hierarchy:
+
+University → Faculty → Course → Unit → Topic → Resource.
+
+Allow administrators to create and manage categories.
+
+### Resource features
+
+Students should be able to:
+- Browse resources.
+- Search resources.
+- Filter by university.
+- Filter by course.
+- Filter by unit.
+- Filter by topic.
+- Open supported files.
+- Download permitted resources.
+- Bookmark resources.
+- Report incorrect or inappropriate content.
+
+### Upload management
+
+Support:
+- PDF.
+- DOCX.
+- PPTX.
+- Images.
+- Other explicitly permitted academic formats.
+
+Implement file validation.
+
+Require appropriate permissions for public sharing.
+
+Do not distribute copyrighted textbooks or examination materials without authorization.
+
+### Student contributions
+
+Design a future-ready contribution system.
+
+Students may submit resources for review.
+
+Submissions must not automatically become public.
+
+Allow administrators to approve, reject or remove submissions.
+
+---
+
+# 12. AI ACADEMIC TUTOR
+
+This is another central feature.
+
+Create a conversational AI assistant designed specifically for university-level academic support.
+
+### Chat interface
+
+Include:
+- Message history.
+- New conversation.
+- Delete conversation.
+- Rename conversation.
+- Message input.
+- Send button.
+- Loading indicator.
+- Markdown responses.
+- Code formatting.
+- Copy response.
+- File upload.
+- Regenerate response.
+
+### Academic assistance
+
+The AI should help with:
+
+- Understanding difficult concepts.
+- Explaining lecture material.
+- Summarizing documents.
+- Solving academic problems step by step.
+- Understanding mathematical formulas.
+- Programming explanations.
+- Generating practice questions.
+- Preparing for examinations.
+- Creating revision schedules.
+- Explaining academic terminology.
+
+### Document-aware AI
+
+Allow students to upload documents and ask questions about them.
+
+Implement document processing and retrieval-augmented generation (RAG).
+
+Recommended architecture:
+
+1. Accept uploaded document.
+2. Validate file.
+3. Extract text.
+4. Divide text into suitable chunks.
+5. Generate embeddings through a configured embedding provider.
+6. Store embeddings in PostgreSQL using pgvector or an equivalent vector database.
+7. Retrieve relevant chunks when students ask questions.
+8. Provide the relevant content to the AI.
+9. Generate an answer grounded in retrieved material.
+10. Display citations or document references.
+
+The AI must distinguish:
+
+- Information taken from the student's uploaded materials.
+- General academic knowledge.
+- Information that cannot be verified from the supplied documents.
+
+Never fabricate document citations or page numbers.
+
+### AI tutor teaching modes
+
+Implement configurable teaching modes:
+
+- Beginner.
+- Intermediate.
+- Advanced.
+- University examination level.
+
+### Learning behavior
+
+The AI should explain concepts rather than merely give answers.
+
+For complicated problems:
+- Explain the question.
+- Identify relevant concepts.
+- Break the solution into steps.
+- Show the reasoning.
+- Provide the final answer.
+- Offer a similar practice problem.
+
+The AI should encourage academic learning and independent understanding.
+
+---
+
+# 13. REVISION AND EXAMINATION PREPARATION
+
+Create a dedicated revision workspace.
+
+### Quiz generator
+
+Generate questions from:
+- Lecture transcripts.
+- Generated notes.
+- Uploaded PDFs.
+- Selected revision materials.
+
+Support:
+- Multiple-choice questions.
+- True or false.
+- Short-answer questions.
+- Structured questions.
+
+### Quiz functionality
+
+- Select course and topic.
+- Choose question count.
+- Choose difficulty.
+- Start quiz.
+- Submit answers.
+- Mark objective questions.
+- Provide explanations.
+- Display results.
+- Save quiz history.
+
+For subjective questions, use AI-assisted marking with clear explanations and appropriate uncertainty.
+
+### Flashcards
+
+Generate question-and-answer flashcards.
+
+Include:
+- Flip card.
+- Mark as known.
+- Mark as difficult.
+- Review later.
+- Track learning progress.
+
+### Examination preparation mode
+
+Create a mock examination feature.
+
+Allow students to:
+- Select a unit.
+- Select difficulty.
+- Set examination duration.
+- Answer generated questions.
+- Submit examination.
+- Receive feedback.
+- Review incorrect answers.
+
+Do not claim to predict actual future examination papers.
+
+---
+
+# 14. NOTIFICATIONS AND STUDY REMINDERS
+
+Implement an in-app notification system.
+
+Notifications may include:
+
+- Transcription completed.
+- AI notes generated.
+- Document successfully exported.
+- New revision materials available.
+- Upcoming examination.
+- Study reminders.
+
+Allow users to manage notification preferences.
+
+Prepare the architecture for future email and push notifications.
+
+Do not send notifications without appropriate user consent and configuration.
+
+---
+
+# 15. STUDENT SETTINGS
+
+Create a settings area containing:
+
+- Personal information.
+- Academic profile.
+- Password management.
+- Appearance.
+- Light mode.
+- Dark mode.
+- Language preferences.
+- Notification preferences.
+- Storage usage.
+- Data export.
+- Recording management.
+- Account deletion.
+- Privacy settings.
+
+Make deletion procedures transparent.
+
+Deleting an account must follow a secure deletion or retention policy.
+
+---
+
+# 16. ADMINISTRATOR DASHBOARD
+
+Build a separate protected administrator interface.
+
+Do not allow ordinary students to access administrative functions.
+
+### Administrator overview
+
+Display:
+- Registered students.
+- Active users.
+- Uploaded resources.
+- Recorded lectures.
+- Transcription job statistics.
+- AI usage.
+- Storage usage.
+- Subscription statistics where applicable.
+
+### Administrative capabilities
+
+- Manage users.
+- Suspend or restore accounts.
+- Manage universities.
+- Manage courses.
+- Manage units.
+- Upload academic resources.
+- Approve student submissions.
+- Review reported materials.
+- Remove unauthorized content.
+- Manage resource categories.
+- Configure application settings.
+- View system logs.
+- Monitor processing failures.
+- Manage subscription plans.
+
+Implement role-based access control.
+
+Initial roles:
+
+1. Student.
+2. Administrator.
+
+Design the permissions architecture so lecturer and institutional roles can be added later.
+
+Every administrative operation must be authorized on the server.
+
+---
+
+# 17. DATABASE DESIGN
+
+Design a relational PostgreSQL database with appropriate indexes, constraints, foreign keys and Row Level Security.
+
+Create migrations for all tables.
+
+Suggested tables:
+
+### Identity
+- profiles
+- user_roles
+- user_settings
+- academic_profiles
+
+### Academic structure
+- universities
+- faculties
+- courses
+- units
+- student_courses
+
+### Lecture management
+- lectures
+- recordings
+- transcription_jobs
+- transcripts
+- transcript_versions
+- generated_notes
+
+### Documents
+- documents
+- document_versions
+- document_shares
+
+### Revision library
+- resources
+- resource_categories
+- resource_submissions
+- resource_bookmarks
+- resource_reports
+
+### AI services
+- ai_conversations
+- ai_messages
+- document_chunks
+- document_embeddings
+- ai_usage_logs
+
+### Revision
+- flashcards
+- quizzes
+- quiz_questions
+- quiz_attempts
+- quiz_answers
+
+### Notifications
+- notifications
+- study_reminders
+
+### Administration
+- audit_logs
+- system_settings
+- subscription_plans
+- subscriptions
+- payment_transactions
+
+You may modify the schema when necessary, but document the changes.
+
+Ensure every user's private data is protected by appropriate ownership policies.
+
+Implement Row Level Security for all relevant tables.
+
+Never rely solely on hiding frontend buttons to enforce permissions.
+
+---
+
+# 18. PAYMENT AND SUBSCRIPTION ARCHITECTURE
+
+The initial release should support a configurable freemium business model.
+
+Possible future plans:
+
+### Free
+- Limited recording minutes.
+- Limited AI messages.
+- Limited storage.
+- Basic document exports.
+- Access to selected revision materials.
+
+### Premium
+- Higher transcription limits.
+- Increased AI usage.
+- More storage.
+- Advanced note generation.
+- Advanced examination tools.
+- Additional document features.
+
+### Institutional
+- University-level access.
+- Lecturer management.
+- Institutional resource libraries.
+- Analytics.
+
+Do not invent subscription prices.
+
+Build subscription limits as configurable database settings.
+
+Prepare payment integration for:
+- M-Pesa through an appropriate authorized payment provider.
+- Card payments.
+- Other supported payment providers.
+
+Never simulate successful payment transactions.
+
+Implement proper payment verification using secure server-side callbacks or webhooks.
+
+Do not activate paid subscriptions until payment has been verified.
+
+Payment functionality may be deferred from the first MVP if it would delay the core learning workflow.
+
+---
+
+# 19. UI/UX DESIGN REQUIREMENTS
+
+The application must look like a professional, modern educational technology product.
+
+Avoid generic AI-generated dashboard designs.
+
+Use consistent spacing, typography, colours and components.
+
+### Design direction
+
+- Modern.
+- Minimalist.
+- Professional.
+- Academic.
+- Premium.
+- Student-friendly.
+- Responsive.
+
+Create a professional colour system with a restrained primary colour, neutral backgrounds and clear semantic colours.
+
+Make the branding configurable.
+
+### Desktop layout
+
+Use a professional dashboard layout:
+
+- Sidebar navigation.
+- Top navigation.
+- Main content area.
+- Contextual actions.
+- Responsive content cards.
+
+### Mobile layout
+
+Use:
+- Compact navigation.
+- Touch-friendly buttons.
+- Responsive forms.
+- Readable typography.
+- Mobile-friendly recording controls.
+- Accessible dialogs.
+- Proper document editing behavior.
+
+### Navigation
+
+Suggested sidebar:
+
+1. Dashboard.
+2. My Lectures.
+3. Record Lecture.
+4. My Notes.
+5. Documents.
+6. Revision Library.
+7. AI Tutor.
+8. Exam Preparation.
+9. Flashcards.
+10. My Courses.
+11. Settings.
+
+Show administrative navigation only to authorized administrators.
+
+### Design quality
+
+Use:
+- Consistent design tokens.
+- Appropriate icons.
+- Subtle transitions.
+- Clear hover states.
+- Loading skeletons.
+- Error states.
+- Empty states.
+- Success messages.
+- Confirmation dialogs.
+
+Avoid excessive animations, gradients and unnecessary visual effects.
+
+Ensure accessibility, including keyboard navigation, contrast and screen-reader-friendly labels.
+
+---
+
+# 20. SECURITY AND DATA PROTECTION
+
+Security is mandatory.
+
+Follow secure software engineering practices and applicable Kenyan data protection requirements, including the Data Protection Act, 2019 and relevant regulations.
+
+Implement:
+
+- HTTPS in production.
+- Secure authentication.
+- Authorization checks.
+- Database Row Level Security.
+- Input validation.
+- File upload validation.
+- Secure file access.
+- Rate limiting.
+- API protection.
+- Server-side secret management.
+- Audit logging for administrative operations.
+- Appropriate backup procedures.
+- Data retention policies.
+- Secure deletion workflows.
+
+Lecture recordings may contain voices and personal information.
+
+Therefore:
+- Provide clear recording notices.
+- Obtain appropriate permissions and consent.
+- Explain data processing.
+- Restrict access to recordings.
+- Allow students to delete recordings.
+- Do not expose private recordings through public storage links.
+- Establish appropriate retention periods.
+- Assess third-party AI provider data handling before sending student materials.
+
+Provide privacy policy and terms of service pages.
+
+Do not claim legal compliance simply because a privacy page exists.
+
+---
+
+# 21. PERFORMANCE AND RELIABILITY
+
+The platform should be usable on ordinary smartphones and slower internet connections.
+
+Implement:
+
+- Lazy loading.
+- Pagination.
+- Optimized images.
+- Efficient database queries.
+- Appropriate caching.
+- Resumable or chunked uploads where suitable.
+- Background processing for lengthy tasks.
+- Retry mechanisms.
+- Error logging.
+- Processing status indicators.
+
+Do not block the entire application while a transcription or AI task is running.
+
+Provide a clear status page for lengthy processing operations.
+
+Use queues or an appropriate asynchronous job system for expensive processing.
+
+Ensure jobs are idempotent where practical so retries do not create duplicate records or charges.
+
+---
+
+# 22. TESTING REQUIREMENTS
+
+Do not consider the application complete without testing.
+
+Implement:
+
+### Unit testing
+Test:
+- Validation.
+- Document processing.
+- Business logic.
+- Access-control utilities.
+- AI prompt construction.
+- File handling.
+
+### Integration testing
+Test:
+- Registration.
+- Login.
+- Database operations.
+- File uploads.
+- Recording storage.
+- Transcription workflow.
+- AI chat.
+- Document exports.
+
+### End-to-end testing
+
+Test the following complete student journey:
+
+1. Student opens the application.
+2. Registers an account.
+3. Completes academic profile.
+4. Opens dashboard.
+5. Starts a recording.
+6. Stops and saves recording.
+7. Transcribes recording.
+8. Generates lecture notes.
+9. Opens notes in document editor.
+10. Edits notes.
+11. Exports PDF.
+12. Exports Word document.
+13. Uploads academic material.
+14. Asks AI a question about the material.
+15. Generates a revision quiz.
+16. Completes the quiz.
+17. Reviews results.
+
+Also test unauthorized access, invalid files, failed network requests and processing failures.
+
+Use realistic test data without exposing actual student information.
+
+---
+
+# 23. MVP DEVELOPMENT PHASES
+
+Build the application in clearly defined stages.
+
+Do not skip stages.
+
+## PHASE 1 — Project foundation
+
+- Inspect environment.
+- Set up Next.js.
+- Configure TypeScript.
+- Install dependencies.
+- Configure Tailwind.
+- Configure component library.
+- Set up Supabase.
+- Configure authentication.
+- Create initial database schema.
+- Establish reusable components.
+- Create application navigation.
+
+Deliverable: A working application foundation.
+
+## PHASE 2 — Student accounts and dashboard
+
+- Registration.
+- Login.
+- Onboarding.
+- Academic profiles.
+- Student dashboard.
+- Courses and units.
+- Settings.
+
+Deliverable: Students can register, sign in and manage their academic profiles.
+
+## PHASE 3 — Lecture recording
+
+- Microphone permissions.
+- Audio recording.
+- Pause and resume.
+- Recording timer.
+- Audio playback.
+- Save recording.
+- Audio uploads.
+- Secure storage.
+
+Deliverable: Students can record and upload actual audio.
+
+## PHASE 4 — Transcription
+
+- Provider integration.
+- Background transcription jobs.
+- Transcript storage.
+- Transcript editor.
+- Processing status.
+- Error handling.
+
+Deliverable: Actual audio is converted into text.
+
+## PHASE 5 — AI notes and documents
+
+- AI summaries.
+- Structured lecture notes.
+- Rich-text editor.
+- Autosave.
+- PDF generation.
+- DOCX generation.
+
+Deliverable: Students can generate, edit and download academic documents.
+
+## PHASE 6 — AI tutor
+
+- AI provider integration.
+- Chat interface.
+- Conversation history.
+- File uploads.
+- Document extraction.
+- Vector search.
+- Source-grounded answers.
+
+Deliverable: Students can ask questions about their own academic materials.
+
+## PHASE 7 — Revision library
+
+- Resource categories.
+- Search.
+- Filters.
+- Uploads.
+- Bookmarks.
+- Resource moderation.
+- Download controls.
+
+Deliverable: Students can access organized academic resources.
+
+## PHASE 8 — Revision tools
+
+- Flashcards.
+- Quiz generator.
+- Quiz interface.
+- Automatic marking.
+- Examination preparation.
+- Results history.
+
+Deliverable: Students can revise and test their knowledge.
+
+## PHASE 9 — Administration and security
+
+- Administrator dashboard.
+- User management.
+- Content moderation.
+- Permissions.
+- Security checks.
+- Audit logs.
+- Privacy controls.
+
+Deliverable: Administrators can manage the platform securely.
+
+## PHASE 10 — Testing and deployment
+
+- Complete functional testing.
+- Fix bugs.
+- Optimize performance.
+- Configure production environment.
+- Deploy frontend.
+- Configure database and storage.
+- Configure domain and HTTPS.
+- Prepare launch documentation.
+
+Deliverable: A deployable MVP.
+
+---
+
+# 24. FUTURE EXPANSION ROADMAP
+
+Do not implement all these features in the initial MVP, but design the architecture to accommodate them.
+
+### Version 2
+
+- Android application.
+- Background recording where supported.
+- Approved online meeting integrations.
+- Speaker diarization.
+- Voice-based AI tutor.
+- Offline revision materials.
+- Advanced academic search.
+- Smart lecture timestamps.
+
+### Version 3
+
+- Collaborative study groups.
+- Shared documents.
+- Student discussions.
+- Lecturer accounts.
+- Lecturer-uploaded resources.
+- University integrations.
+- Study timetables.
+- Examination reminders.
+
+### Version 4
+
+- Institutional subscriptions.
+- Advanced learning analytics.
+- More African languages.
+- International expansion.
+- Advanced AI personalization.
+- Cross-platform mobile applications.
+
+---
+
+# 25. ENVIRONMENT CONFIGURATION
+
+Create a `.env.example` file.
+
+Include appropriate placeholders for:
+
+- Supabase URL.
+- Supabase anonymous/publishable key.
+- Supabase service role key.
+- AI provider API key.
+- Transcription provider API key.
+- Embedding provider configuration.
+- Payment provider credentials.
+- Application base URL.
+- Other necessary secrets.
+
+Use the correct current Supabase environment variable conventions.
+
+Never commit real secrets to GitHub.
+
+Never expose service-role credentials or secret provider keys in browser-accessible code.
+
+Provide setup instructions for every external integration.
+
+---
+
+# 26. DEVELOPMENT RULES
+
+These instructions are mandatory.
+
+1. Build real functionality, not visual placeholders.
+2. Do not create fake authentication.
+3. Do not use local hard-coded data as a replacement for database persistence.
+4. Do not create buttons that have no action.
+5. Do not simulate successful transcription.
+6. Do not simulate AI responses as if they came from a real model.
+7. Do not simulate successful payments.
+8. Do not claim an external integration works without testing it.
+9. Validate all input.
+10. Protect all private user data.
+11. Handle errors gracefully.
+12. Use TypeScript properly.
+13. Keep components reusable.
+14. Keep the code organized.
+15. Document important architectural decisions.
+16. Provide database migrations.
+17. Include setup instructions.
+18. Include testing instructions.
+19. Avoid unnecessary dependencies.
+20. Do not sacrifice security for convenience.
+
+If a feature requires credentials that are unavailable, build the integration interface, document the required configuration and provide a clear setup status.
+
+Never hide an incomplete feature behind a button that looks fully functional.
+
+---
+
+# 27. REQUIRED PROJECT DOCUMENTATION
+
+Create and maintain:
+
+- README.md
+- ARCHITECTURE.md
+- DATABASE_SCHEMA.md
+- API_DOCUMENTATION.md
+- AI_INTEGRATION.md
+- AUDIO_PROCESSING.md
+- SECURITY.md
+- DEPLOYMENT.md
+- TESTING.md
+- ROADMAP.md
+
+Document how to run the application locally.
+
+Document how to configure Supabase.
+
+Document how to connect AI services.
+
+Document how to configure transcription.
+
+Document how to deploy the application.
+
+---
+
+# 28. FIRST ACTION — INSPECT AND PLAN BEFORE CODING
+
+Before implementing the application:
+
+1. Inspect the current workspace.
+2. Identify existing files and dependencies.
+3. Identify whether a project already exists.
+4. Explain the proposed architecture.
+5. Identify any missing credentials.
+6. Create a development plan.
+7. Identify technical risks.
+8. Propose the database structure.
+9. Identify the first implementation milestone.
+
+Do not immediately generate thousands of lines of code without understanding the project environment.
+
+Once the plan is established, begin implementing Phase 1.
+
+Do not stop after generating a plan. Continue implementing the project in manageable stages.
+
+After each stage:
+
+- Explain what was built.
+- List files created or modified.
+- Explain database changes.
+- Identify required configuration.
+- Run available tests.
+- Report any failures.
+- State what remains incomplete.
+- Proceed to the next stage when the current stage is stable.
+
+If you encounter a blocker, explain it and propose the safest practical solution.
+
+---
+
+# 29. DEFINITION OF SUCCESS
+
+The MVP is successful when a real student can:
+
+1. Register and log in.
+2. Set up their university academic profile.
+3. Record a lecture using their microphone.
+4. Upload an existing audio recording.
+5. Transcribe actual audio.
+6. Generate organized academic notes.
+7. Edit those notes.
+8. Download genuine PDF documents.
+9. Download genuine Word documents.
+10. Upload academic learning materials.
+11. Ask questions about their uploaded materials using AI.
+12. Generate revision questions.
+13. Complete quizzes.
+14. Save their academic activity.
+15. Access their private information securely from their account.
+
+An administrator must be able to manage users and revision resources.
+
+The application must work on mobile and desktop browsers.
+
+All implemented features must use real integrations or clearly communicate when configuration is missing.
+
+---
+
+# FINAL INSTRUCTION
+
+You are responsible for developing this product as a serious software engineering project.
+
+Think like an experienced product engineer.
+
+Prioritize functionality, security, usability and maintainability.
+
+Make sensible technical decisions where requirements are not yet specified, but document those decisions so they can be changed later.
+
+Build the MVP first.
+
+Do not overcomplicate the initial release.
+
+Do not stop at a landing page or attractive dashboard.
+
+The final objective is a real AI-powered academic assistant that Kenyan university students can use to record lectures, generate notes, access revision resources and receive intelligent academic assistance.
+
+START BY INSPECTING THE PROJECT ENVIRONMENT AND PREPARING THE DEVELOPMENT PLAN. THEN IMPLEMENT THE FIRST PHASE.

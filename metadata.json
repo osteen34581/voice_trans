@@ -1,0 +1,6 @@
+{
+  "name": "AI Academic Assistant",
+  "description": "An AI-powered academic workspace for Kenyan university students to record lectures, transcribe speech, generate structured notes, export PDF/DOCX documents, and revise with a grounded AI tutor.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

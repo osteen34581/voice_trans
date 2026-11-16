@@ -1,0 +1,516 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Student or administrator profile and academic enrollment metadata.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "fullName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "university": { "type": "string", "maxLength": 160 },
+        "faculty": { "type": "string", "maxLength": 160 },
+        "course": { "type": "string", "maxLength": 160 },
+        "yearOfStudy": { "type": "string", "maxLength": 40 },
+        "semester": { "type": "string", "maxLength": 40 },
+        "academicInterests": { "type": "string", "maxLength": 400 },
+        "studyPreferences": { "type": "string", "maxLength": 400 },
+        "onboardingCompleted": { "type": "boolean" },
+        "suspended": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "fullName", "onboardingCompleted", "suspended", "createdAt", "updatedAt"]
+    },
+    "UserPrivateSettings": {
+      "title": "UserPrivateSettings",
+      "description": "Isolated PII and personal preferences for the authenticated user.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "format": "email", "maxLength": 180 },
+        "theme": { "type": "string", "enum": ["light", "dark", "system"] },
+        "language": { "type": "string", "enum": ["en-KE", "sw-KE"] },
+        "notifyTranscription": { "type": "boolean" },
+        "notifyNotes": { "type": "boolean" },
+        "notifyExams": { "type": "boolean" },
+        "notifyLibrary": { "type": "boolean" },
+        "recordingConsentAccepted": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "email", "theme", "language", "notifyTranscription", "notifyNotes", "notifyExams", "notifyLibrary", "recordingConsentAccepted", "updatedAt"]
+    },
+    "AdminGrant": {
+      "title": "AdminGrant",
+      "description": "Explicit administrator access record.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "format": "email", "maxLength": 180 },
+        "grantedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "grantedAt"]
+    },
+    "University": {
+      "title": "University",
+      "description": "Kenyan university directory record managed by administrators.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "minLength": 2, "maxLength": 160 },
+        "shortCode": { "type": "string", "minLength": 2, "maxLength": 24 },
+        "county": { "type": "string", "maxLength": 80 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "shortCode", "county", "createdAt"]
+    },
+    "Course": {
+      "title": "Course",
+      "description": "University degree or diploma programme.",
+      "type": "object",
+      "properties": {
+        "university": { "type": "string", "minLength": 2, "maxLength": 160 },
+        "faculty": { "type": "string", "minLength": 2, "maxLength": 160 },
+        "name": { "type": "string", "minLength": 2, "maxLength": 160 },
+        "code": { "type": "string", "minLength": 2, "maxLength": 32 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["university", "faculty", "name", "code", "createdAt"]
+    },
+    "StudentUnit": {
+      "title": "StudentUnit",
+      "description": "Academic unit enrolled by a student.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "unitCode": { "type": "string", "minLength": 2, "maxLength": 32 },
+        "unitName": { "type": "string", "minLength": 2, "maxLength": 160 },
+        "university": { "type": "string", "maxLength": 160 },
+        "course": { "type": "string", "maxLength": 160 },
+        "semester": { "type": "string", "maxLength": 40 },
+        "lecturerName": { "type": "string", "maxLength": 120 },
+        "examDate": { "type": "string", "maxLength": 32 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "unitCode", "unitName", "createdAt", "updatedAt"]
+    },
+    "Lecture": {
+      "title": "Lecture",
+      "description": "Recorded or uploaded lecture session owned by a student.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "unitId": { "type": "string", "maxLength": 128 },
+        "unitCode": { "type": "string", "maxLength": 32 },
+        "unitName": { "type": "string", "maxLength": 160 },
+        "university": { "type": "string", "maxLength": 160 },
+        "course": { "type": "string", "maxLength": 160 },
+        "title": { "type": "string", "minLength": 2, "maxLength": 200 },
+        "lecturerName": { "type": "string", "maxLength": 120 },
+        "lectureDate": { "type": "string", "maxLength": 32 },
+        "description": { "type": "string", "maxLength": 1000 },
+        "audioFileName": { "type": "string", "maxLength": 200 },
+        "audioMimeType": { "type": "string", "maxLength": 80 },
+        "audioSizeBytes": { "type": "number" },
+        "durationSeconds": { "type": "number" },
+        "transcriptionStatus": { "type": "string", "enum": ["uploaded", "queued", "processing", "completed", "failed"] },
+        "transcriptionError": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title", "transcriptionStatus", "createdAt", "updatedAt"]
+    },
+    "Transcript": {
+      "title": "Transcript",
+      "description": "Original speech-to-text transcript and separate student-edited transcript.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "lectureId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "rawText": { "type": "string", "maxLength": 180000 },
+        "editedText": { "type": "string", "maxLength": 180000 },
+        "languageDetected": { "type": "string", "maxLength": 64 },
+        "uncertaintyNotes": { "type": "string", "maxLength": 4000 },
+        "modelUsed": { "type": "string", "maxLength": 80 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "lectureId", "rawText", "editedText", "modelUsed", "createdAt", "updatedAt"]
+    },
+    "GeneratedNote": {
+      "title": "GeneratedNote",
+      "description": "AI-generated structured academic notes derived from a transcript.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "lectureId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "unitCode": { "type": "string", "maxLength": 32 },
+        "unitName": { "type": "string", "maxLength": 160 },
+        "title": { "type": "string", "minLength": 2, "maxLength": 200 },
+        "format": { "type": "string", "maxLength": 60 },
+        "summaryLength": { "type": "string", "enum": ["brief", "standard", "detailed"] },
+        "contentMarkdown": { "type": "string", "maxLength": 180000 },
+        "versionNumber": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "lectureId", "title", "format", "summaryLength", "contentMarkdown", "versionNumber", "createdAt", "updatedAt"]
+    },
+    "StudyDocument": {
+      "title": "StudyDocument",
+      "description": "Rich-text academic document created or edited by a student.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "lectureId": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "university": { "type": "string", "maxLength": 160 },
+        "course": { "type": "string", "maxLength": 160 },
+        "unitCode": { "type": "string", "maxLength": 32 },
+        "unitName": { "type": "string", "maxLength": 160 },
+        "lecturerName": { "type": "string", "maxLength": 120 },
+        "lectureDate": { "type": "string", "maxLength": 32 },
+        "htmlContent": { "type": "string", "maxLength": 250000 },
+        "plainText": { "type": "string", "maxLength": 180000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title", "htmlContent", "createdAt", "updatedAt"]
+    },
+    "DocumentVersion": {
+      "title": "DocumentVersion",
+      "description": "Saved historical snapshot of a StudyDocument.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "documentId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "htmlContent": { "type": "string", "maxLength": 250000 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "documentId", "title", "htmlContent", "createdAt"]
+    },
+    "RevisionResource": {
+      "title": "RevisionResource",
+      "description": "Academic revision library resource organized by Kenyan university hierarchy.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "minLength": 2, "maxLength": 200 },
+        "category": { "type": "string", "minLength": 2, "maxLength": 64 },
+        "university": { "type": "string", "minLength": 2, "maxLength": 160 },
+        "faculty": { "type": "string", "maxLength": 160 },
+        "course": { "type": "string", "minLength": 2, "maxLength": 160 },
+        "unitCode": { "type": "string", "minLength": 2, "maxLength": 32 },
+        "topic": { "type": "string", "maxLength": 160 },
+        "description": { "type": "string", "maxLength": 2000 },
+        "contentText": { "type": "string", "maxLength": 120000 },
+        "fileName": { "type": "string", "maxLength": 200 },
+        "fileType": { "type": "string", "maxLength": 64 },
+        "status": { "type": "string", "enum": ["approved", "pending", "rejected"] },
+        "submittedBy": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "category", "university", "course", "unitCode", "status", "submittedBy", "createdAt", "updatedAt"]
+    },
+    "ResourceBookmark": {
+      "title": "ResourceBookmark",
+      "description": "Student bookmark for a revision library resource.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "resourceId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "resourceTitle": { "type": "string", "maxLength": 200 },
+        "unitCode": { "type": "string", "maxLength": 32 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "resourceId", "createdAt"]
+    },
+    "ResourceReport": {
+      "title": "ResourceReport",
+      "description": "Moderation report flagged by a student for review.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "resourceId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "reason": { "type": "string", "minLength": 3, "maxLength": 120 },
+        "details": { "type": "string", "maxLength": 1000 },
+        "status": { "type": "string", "enum": ["open", "resolved", "dismissed"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "resourceId", "reason", "status", "createdAt"]
+    },
+    "AiMaterial": {
+      "title": "AiMaterial",
+      "description": "Uploaded academic PDF/DOCX/TXT document indexed for RAG tutoring.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "unitCode": { "type": "string", "maxLength": 32 },
+        "fileName": { "type": "string", "maxLength": 200 },
+        "mimeType": { "type": "string", "maxLength": 100 },
+        "fileSizeBytes": { "type": "number" },
+        "chunkCount": { "type": "number" },
+        "extractedPreview": { "type": "string", "maxLength": 2000 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title", "fileName", "chunkCount", "createdAt"]
+    },
+    "DocumentChunk": {
+      "title": "DocumentChunk",
+      "description": "Text chunk and embedding vector for a student's uploaded material.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "materialId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "chunkIndex": { "type": "number" },
+        "sectionLabel": { "type": "string", "maxLength": 120 },
+        "text": { "type": "string", "maxLength": 8000 },
+        "embedding": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "materialId", "chunkIndex", "text", "createdAt"]
+    },
+    "AiConversation": {
+      "title": "AiConversation",
+      "description": "AI academic tutor conversation thread.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "teachingMode": { "type": "string", "enum": ["beginner", "intermediate", "advanced", "exam"] },
+        "materialId": { "type": "string", "maxLength": 128 },
+        "unitCode": { "type": "string", "maxLength": 32 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title", "teachingMode", "createdAt", "updatedAt"]
+    },
+    "AiMessage": {
+      "title": "AiMessage",
+      "description": "Single message inside an AI tutor conversation.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "conversationId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "role": { "type": "string", "enum": ["user", "assistant"] },
+        "content": { "type": "string", "maxLength": 40000 },
+        "citations": { "type": "string", "maxLength": 4000 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "conversationId", "role", "content", "createdAt"]
+    },
+    "Flashcard": {
+      "title": "Flashcard",
+      "description": "Study flashcard generated from lectures, notes, or materials.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "unitCode": { "type": "string", "maxLength": 32 },
+        "topic": { "type": "string", "maxLength": 160 },
+        "front": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "back": { "type": "string", "minLength": 1, "maxLength": 3000 },
+        "mastery": { "type": "string", "enum": ["new", "known", "difficult", "review"] },
+        "reviewCount": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "front", "back", "mastery", "reviewCount", "createdAt", "updatedAt"]
+    },
+    "Quiz": {
+      "title": "Quiz",
+      "description": "Generated revision quiz or mock examination.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "unitCode": { "type": "string", "maxLength": 32 },
+        "topic": { "type": "string", "maxLength": 160 },
+        "difficulty": { "type": "string", "enum": ["beginner", "intermediate", "advanced", "exam"] },
+        "mode": { "type": "string", "enum": ["quiz", "mock_exam"] },
+        "durationMinutes": { "type": "number" },
+        "questionsJson": { "type": "string", "maxLength": 120000 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title", "difficulty", "mode", "questionsJson", "createdAt"]
+    },
+    "QuizAttempt": {
+      "title": "QuizAttempt",
+      "description": "Completed quiz or mock exam attempt with marks and feedback.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "quizId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "quizTitle": { "type": "string", "maxLength": 200 },
+        "unitCode": { "type": "string", "maxLength": 32 },
+        "score": { "type": "number" },
+        "maxScore": { "type": "number" },
+        "resultsJson": { "type": "string", "maxLength": 120000 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "quizId", "score", "maxScore", "resultsJson", "createdAt"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "In-app notification for transcription, notes, export, or reminders.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "type": { "type": "string", "enum": ["transcription", "notes", "export", "library", "exam", "system"] },
+        "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "message": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "read": { "type": "boolean" },
+        "linkTab": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "type", "title", "message", "read", "createdAt"]
+    },
+    "StudyReminder": {
+      "title": "StudyReminder",
+      "description": "Upcoming examination date or study reminder created by student.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "unitCode": { "type": "string", "maxLength": 32 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "dueDate": { "type": "string", "minLength": 4, "maxLength": 32 },
+        "enabled": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title", "dueDate", "enabled", "createdAt"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Administrative action audit trail.",
+      "type": "object",
+      "properties": {
+        "actorUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "actorEmail": { "type": "string", "maxLength": 180 },
+        "action": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "targetType": { "type": "string", "maxLength": 80 },
+        "targetId": { "type": "string", "maxLength": 128 },
+        "details": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["actorUid", "action", "targetType", "targetId", "createdAt"]
+    },
+    "SystemSetting": {
+      "title": "SystemSetting",
+      "description": "Configurable branding, freemium limits, and platform settings.",
+      "type": "object",
+      "properties": {
+        "brandName": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "tagline": { "type": "string", "maxLength": 160 },
+        "primaryColor": { "type": "string", "maxLength": 32 },
+        "freeRecordingMinutes": { "type": "number" },
+        "freeAiMessagesPerDay": { "type": "number" },
+        "freeStorageLimitMb": { "type": "number" },
+        "updatedBy": { "type": "string", "maxLength": 128 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["brandName", "primaryColor", "freeRecordingMinutes", "freeAiMessagesPerDay", "freeStorageLimitMb", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Student profile documents strictly readable/writable by owner or admin."
+    },
+    "/users/{userId}/private/{docId}": {
+      "schema": { "$ref": "#/entities/UserPrivateSettings" },
+      "description": "Isolated PII (email) and personal notification/privacy preferences."
+    },
+    "/admins/{adminId}": {
+      "schema": { "$ref": "#/entities/AdminGrant" },
+      "description": "Administrator registry readable and writable only by admins."
+    },
+    "/universities/{universityId}": {
+      "schema": { "$ref": "#/entities/University" },
+      "description": "Kenyan university directory entries."
+    },
+    "/courses/{courseId}": {
+      "schema": { "$ref": "#/entities/Course" },
+      "description": "Academic programmes and courses."
+    },
+    "/studentUnits/{unitId}": {
+      "schema": { "$ref": "#/entities/StudentUnit" },
+      "description": "Student enrolled units."
+    },
+    "/lectures/{lectureId}": {
+      "schema": { "$ref": "#/entities/Lecture" },
+      "description": "Recorded and uploaded student lectures."
+    },
+    "/transcripts/{transcriptId}": {
+      "schema": { "$ref": "#/entities/Transcript" },
+      "description": "Lecture transcripts keeping raw and edited versions separate."
+    },
+    "/generatedNotes/{noteId}": {
+      "schema": { "$ref": "#/entities/GeneratedNote" },
+      "description": "AI-generated structured academic notes."
+    },
+    "/documents/{documentId}": {
+      "schema": { "$ref": "#/entities/StudyDocument" },
+      "description": "Editable rich-text study documents."
+    },
+    "/documentVersions/{versionId}": {
+      "schema": { "$ref": "#/entities/DocumentVersion" },
+      "description": "Saved version snapshots for study documents."
+    },
+    "/resources/{resourceId}": {
+      "schema": { "$ref": "#/entities/RevisionResource" },
+      "description": "Revision library resources and pending student submissions."
+    },
+    "/resourceBookmarks/{bookmarkId}": {
+      "schema": { "$ref": "#/entities/ResourceBookmark" },
+      "description": "Student resource bookmarks."
+    },
+    "/resourceReports/{reportId}": {
+      "schema": { "$ref": "#/entities/ResourceReport" },
+      "description": "Student moderation reports on library resources."
+    },
+    "/aiMaterials/{materialId}": {
+      "schema": { "$ref": "#/entities/AiMaterial" },
+      "description": "Uploaded PDF/DOCX/TXT documents for RAG tutoring."
+    },
+    "/documentChunks/{chunkId}": {
+      "schema": { "$ref": "#/entities/DocumentChunk" },
+      "description": "Chunked text and embeddings for RAG retrieval."
+    },
+    "/aiConversations/{conversationId}": {
+      "schema": { "$ref": "#/entities/AiConversation" },
+      "description": "AI academic tutor conversations."
+    },
+    "/aiMessages/{messageId}": {
+      "schema": { "$ref": "#/entities/AiMessage" },
+      "description": "Messages within an AI tutor conversation."
+    },
+    "/flashcards/{flashcardId}": {
+      "schema": { "$ref": "#/entities/Flashcard" },
+      "description": "Student flashcards and mastery progress."
+    },
+    "/quizzes/{quizId}": {
+      "schema": { "$ref": "#/entities/Quiz" },
+      "description": "Generated quizzes and mock examinations."
+    },
+    "/quizAttempts/{attemptId}": {
+      "schema": { "$ref": "#/entities/QuizAttempt" },
+      "description": "Completed quiz attempts and scores."
+    },
+    "/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/Notification" },
+      "description": "In-app notifications."
+    },
+    "/studyReminders/{reminderId}": {
+      "schema": { "$ref": "#/entities/StudyReminder" },
+      "description": "Upcoming exam and study reminders."
+    },
+    "/auditLogs/{logId}": {
+      "schema": { "$ref": "#/entities/AuditLog" },
+      "description": "Admin action audit logs."
+    },
+    "/systemSettings/{settingId}": {
+      "schema": { "$ref": "#/entities/SystemSetting" },
+      "description": "Configurable branding and freemium platform limits."
+    }
+  }
+}
