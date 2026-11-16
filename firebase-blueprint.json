@@ -409,6 +409,47 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["brandName", "primaryColor", "freeRecordingMinutes", "freeAiMessagesPerDay", "freeStorageLimitMb", "updatedAt"]
+    },
+    "UserSubscription": {
+      "title": "UserSubscription",
+      "description": "Server-managed student subscription tier unlocked via verified M-Pesa Daraja payments.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "tier": { "type": "string", "enum": ["free", "scholar_monthly", "semester_pro"] },
+        "planName": { "type": "string", "maxLength": 80 },
+        "status": { "type": "string", "enum": ["active", "expired"] },
+        "recordingMinutesLimit": { "type": "number" },
+        "aiMessagesPerDayLimit": { "type": "number" },
+        "storageLimitMb": { "type": "number" },
+        "lastReceiptNumber": { "type": "string", "maxLength": 64 },
+        "lastTransactionId": { "type": "string", "maxLength": 128 },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "tier", "planName", "status", "recordingMinutesLimit", "aiMessagesPerDayLimit", "storageLimitMb", "updatedAt"]
+    },
+    "PaymentTransaction": {
+      "title": "PaymentTransaction",
+      "description": "M-Pesa Daraja STK Push transaction record written and reconciled exclusively by the server.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "planId": { "type": "string", "enum": ["scholar_monthly", "semester_pro"] },
+        "planName": { "type": "string", "maxLength": 80 },
+        "amountKes": { "type": "number" },
+        "phoneMasked": { "type": "string", "maxLength": 24 },
+        "merchantRequestId": { "type": "string", "maxLength": 128 },
+        "checkoutRequestId": { "type": "string", "minLength": 4, "maxLength": 128 },
+        "mpesaReceiptNumber": { "type": "string", "maxLength": 64 },
+        "status": { "type": "string", "enum": ["pending", "completed", "failed", "cancelled"] },
+        "resultCode": { "type": "number" },
+        "resultDesc": { "type": "string", "maxLength": 300 },
+        "environment": { "type": "string", "enum": ["sandbox", "production"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "planId", "planName", "amountKes", "phoneMasked", "checkoutRequestId", "status", "createdAt", "updatedAt"]
     }
   },
   "firestore": {
@@ -511,6 +552,14 @@
     "/systemSettings/{settingId}": {
       "schema": { "$ref": "#/entities/SystemSetting" },
       "description": "Configurable branding and freemium platform limits."
+    },
+    "/subscriptions/{userId}": {
+      "schema": { "$ref": "#/entities/UserSubscription" },
+      "description": "Server-managed premium tier state for a student."
+    },
+    "/paymentTransactions/{transactionId}": {
+      "schema": { "$ref": "#/entities/PaymentTransaction" },
+      "description": "M-Pesa Daraja payment ledger readable only by the owning student or admin; server-write only."
     }
   }
 }

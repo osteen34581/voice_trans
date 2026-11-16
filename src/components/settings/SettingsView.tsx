@@ -1,10 +1,16 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  CheckCircle2,
+  CreditCard,
   Download,
   HardDrive,
+  Loader2,
   Mic,
+  RefreshCw,
   Save,
   ShieldAlert,
+  Smartphone,
+  Sparkles,
   Trash2,
 } from 'lucide-react';
 import { deleteUser } from 'firebase/auth';
@@ -26,12 +32,15 @@ import type {
   Flashcard,
   GeneratedNote,
   Lecture,
+  PaymentTransaction,
+  PremiumPlanInfo,
   Quiz,
   QuizAttempt,
   StudentUnit,
   StudyDocument,
   StudyReminder,
   Transcript,
+  UserSubscription,
 } from '../../types/academic';
 
 interface SettingsViewProps {
@@ -101,6 +110,154 @@ export function SettingsView({
   const [savingPrefs, setSavingPrefs] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
 
+  // M-Pesa Billing & Premium Tier State
+  const [plans, setPlans] = useState<PremiumPlanInfo[]>([]);
+  const [mpesaConfigured, setMpesaConfigured] = useState<boolean>(false);
+  const [mpesaEnv, setMpesaEnv] = useState<'sandbox' | 'production'>('sandbox');
+  const [subscription, setSubscription] = useState<UserSubscription | null>(null);
+  const [transactions, setTransactions] = useState<PaymentTransaction[]>([]);
+  const [billingLoading, setBillingLoading] = useState(false);
+  const [selectedPlanId, setSelectedPlanId] = useState<'scholar_monthly' | 'semester_pro' | null>(null);
+  const [mpesaPhone, setMpesaPhone] = useState('');
+  const [initiatingStk, setInitiatingStk] = useState(false);
+  const [pendingCheckoutId, setPendingCheckoutId] = useState<string | null>(null);
+  const [checkingPayment, setCheckingPayment] = useState(false);
+  const pollTimerRef = useRef<number | null>(null);
+
+  const loadBillingData = useCallback(async () => {
+    if (!user) return;
+    setBillingLoading(true);
+    try {
+      const [plansRes, statusRes] = await Promise.all([
+        apiJson<{
+          mpesaConfigured: boolean;
+          environment: 'sandbox' | 'production';
+          plans: PremiumPlanInfo[];
+        }>('/api/payments/plans'),
+        apiJson<{
+          subscription: UserSubscription | null;
+          transactions: PaymentTransaction[];
+        }>('/api/payments/status'),
+      ]);
+      setPlans(plansRes.plans || []);
+      setMpesaConfigured(Boolean(plansRes.mpesaConfigured));
+      setMpesaEnv(plansRes.environment || 'sandbox');
+      setSubscription(statusRes.subscription || null);
+      setTransactions(statusRes.transactions || []);
+    } catch {
+      // Keep UI functional if billing status temporarily unreachable
+    } finally {
+      setBillingLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    loadBillingData();
+    return () => {
+      if (pollTimerRef.current !== null) {
+        window.clearInterval(pollTimerRef.current);
+      }
+    };
+  }, [loadBillingData]);
+
+  const handleQueryCheckoutStatus = useCallback(
+    async (checkoutId: string, silent = false) => {
+      if (!checkoutId) return;
+      setCheckingPayment(true);
+      try {
+        const res = await apiJson<{ status: string; resultDesc: string }>('/api/payments/mpesa/query', {
+          method: 'POST',
+          body: JSON.stringify({ checkoutRequestId: checkoutId }),
+        });
+
+        if (res.status === 'completed') {
+          if (pollTimerRef.current !== null) {
+            window.clearInterval(pollTimerRef.current);
+            pollTimerRef.current = null;
+          }
+          setPendingCheckoutId(null);
+          setSelectedPlanId(null);
+          await loadBillingData();
+          notify('M-Pesa payment confirmed', 'Your premium tier has been activated.', 'success');
+        } else if (res.status === 'cancelled' || res.status === 'failed') {
+          if (pollTimerRef.current !== null) {
+            window.clearInterval(pollTimerRef.current);
+            pollTimerRef.current = null;
+          }
+          setPendingCheckoutId(null);
+          await loadBillingData();
+          notify(
+            res.status === 'cancelled' ? 'M-Pesa payment cancelled' : 'M-Pesa payment failed',
+            res.resultDesc || 'You can retry the upgrade whenever ready.',
+            'error',
+          );
+        } else if (!silent) {
+          notify('Waiting for M-Pesa PIN', res.resultDesc || 'Complete the prompt on your phone.', 'info');
+        }
+      } catch (err) {
+        if (!silent) {
+          notify('Status check failed', err instanceof Error ? err.message : 'Unable to verify payment.', 'error');
+        }
+      } finally {
+        setCheckingPayment(false);
+      }
+    },
+    [loadBillingData, notify],
+  );
+
+  const handleInitiateMpesaUpgrade = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedPlanId || !mpesaPhone.trim()) return;
+
+    setInitiatingStk(true);
+    try {
+      const res = await apiJson<{
+        checkoutRequestId: string;
+        customerMessage: string;
+        amountKes: number;
+        phoneMasked: string;
+      }>('/api/payments/mpesa/stk-push', {
+        method: 'POST',
+        body: JSON.stringify({
+          planId: selectedPlanId,
+          phoneNumber: mpesaPhone.trim(),
+        }),
+      });
+
+      setPendingCheckoutId(res.checkoutRequestId);
+      notify(
+        'M-Pesa STK Push sent',
+        `${res.customerMessage} (${res.phoneMasked} · KES ${res.amountKes})`,
+        'success',
+      );
+      await loadBillingData();
+
+      if (pollTimerRef.current !== null) {
+        window.clearInterval(pollTimerRef.current);
+      }
+      let attempts = 0;
+      pollTimerRef.current = window.setInterval(() => {
+        attempts += 1;
+        if (attempts > 12) {
+          if (pollTimerRef.current !== null) {
+            window.clearInterval(pollTimerRef.current);
+            pollTimerRef.current = null;
+          }
+          return;
+        }
+        handleQueryCheckoutStatus(res.checkoutRequestId, true);
+      }, 5000);
+    } catch (err) {
+      notify(
+        'M-Pesa checkout unavailable',
+        err instanceof Error ? err.message : 'Unable to send STK Push.',
+        'error',
+      );
+    } finally {
+      setInitiatingStk(false);
+    }
+  };
+
   useEffect(() => {
     if (profile) {
       setFullName(profile.fullName || '');
@@ -125,10 +282,20 @@ export function SettingsView({
     }
   }, [privateSettings]);
 
+  const activeTierActive =
+    subscription?.status === 'active' &&
+    subscription.tier !== 'free' &&
+    (!subscription.expiresAt || Date.parse(subscription.expiresAt) > Date.now());
+
   const totalAudioBytes = lectures.reduce((sum, l) => sum + (l.audioSizeBytes || 0), 0);
   const totalMaterialBytes = materials.reduce((sum, m) => sum + (m.fileSizeBytes || 0), 0);
   const totalStorageMb = Math.round(((totalAudioBytes + totalMaterialBytes) / (1024 * 1024)) * 100) / 100;
-  const storageLimitMb = systemSettings.freeStorageLimitMb || 250;
+  const storageLimitMb = activeTierActive
+    ? subscription!.storageLimitMb
+    : systemSettings.freeStorageLimitMb || 250;
+  const recordingMinutesLimit = activeTierActive
+    ? subscription!.recordingMinutesLimit
+    : systemSettings.freeRecordingMinutes;
   const totalRecordedMinutes = Math.round(
     lectures.reduce((sum, l) => sum + (l.durationSeconds || 0), 0) / 60,
   );
@@ -281,7 +448,7 @@ export function SettingsView({
             {totalStorageMb} MB
           </p>
           <p className="text-[11px] text-slate-500 mt-1 tabular-nums">
-            Quota: {storageLimitMb} MB free workspace allowance
+            Quota: {storageLimitMb} MB {activeTierActive ? subscription?.planName : 'free'} allowance
           </p>
         </div>
 
@@ -294,15 +461,15 @@ export function SettingsView({
             {totalRecordedMinutes} min
           </p>
           <p className="text-[11px] text-slate-500 mt-1 tabular-nums">
-            Allowance: {systemSettings.freeRecordingMinutes} min/mo
+            Allowance: {recordingMinutesLimit} min/mo
           </p>
         </div>
 
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 flex flex-col justify-between">
           <div>
-            <p className="text-xs text-slate-500">Lecture Audio Management</p>
-            <p className="text-xs text-slate-700 dark:text-slate-300 mt-1">
-              {lectures.length} private audio records stored
+            <p className="text-xs text-slate-500">Active Plan</p>
+            <p className="font-display text-base font-bold mt-1 text-emerald-700 dark:text-emerald-400">
+              {activeTierActive ? subscription?.planName : 'Free Student Tier'}
             </p>
           </div>
           <button
@@ -310,9 +477,205 @@ export function SettingsView({
             onClick={() => onNavigate('lectures')}
             className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:underline text-left mt-2 cursor-pointer"
           >
-            Manage Recordings &rarr;
+            Manage {lectures.length} Recordings &rarr;
           </button>
         </div>
+      </div>
+
+      {/* Subscription & M-Pesa Daraja Upgrade */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 space-y-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <CreditCard className="w-4 h-4 text-emerald-700 dark:text-emerald-400" />
+              <h3 className="font-display text-base font-bold">Plan &amp; M-Pesa Daraja Billing</h3>
+              <span className="px-2 py-0.5 text-[11px] font-semibold rounded-md bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-900">
+                {activeTierActive ? subscription?.planName : 'Free Plan'}
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              Upgrade your recording minutes, AI Tutor &amp; Live Voice quota, and private storage directly via Safaricom M-Pesa STK Push ({mpesaEnv}).
+              {activeTierActive && subscription?.expiresAt
+                ? ` Active until ${new Date(subscription.expiresAt).toLocaleDateString()}.`
+                : ''}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => loadBillingData()}
+            disabled={billingLoading}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${billingLoading ? 'animate-spin' : ''}`} />
+            Refresh Billing
+          </button>
+        </div>
+
+        {!mpesaConfigured && (
+          <div className="p-3.5 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 text-xs text-amber-900 dark:text-amber-200">
+            M-Pesa Daraja gateway credentials are not yet configured in server Secrets (<code>MPESA_CONSUMER_KEY</code>, <code>MPESA_CONSUMER_SECRET</code>, <code>MPESA_SHORTCODE</code>, <code>MPESA_PASSKEY</code>). Plans below will activate live STK Push prompts as soon as credentials are added.
+          </div>
+        )}
+
+        <div className="grid sm:grid-cols-2 gap-4">
+          {plans.map((plan) => {
+            const isCurrent = activeTierActive && subscription?.tier === plan.id;
+            const isSelected = selectedPlanId === plan.id;
+            return (
+              <div
+                key={plan.id}
+                className={`rounded-xl border p-5 flex flex-col justify-between gap-4 transition-colors ${
+                  isSelected
+                    ? 'border-emerald-600 bg-emerald-50/30 dark:bg-emerald-950/20'
+                    : 'border-slate-200 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-950/40'
+                }`}
+              >
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <h4 className="font-display text-sm font-bold flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-400" />
+                        {plan.name}
+                      </h4>
+                      <p className="text-[11px] text-slate-500">{plan.billingLabel}</p>
+                    </div>
+                    <div className="text-right">
+                      <span className="font-mono text-lg font-bold text-slate-900 dark:text-white">
+                        KES {plan.amountKes}
+                      </span>
+                    </div>
+                  </div>
+
+                  <ul className="space-y-1.5 text-xs text-slate-600 dark:text-slate-300">
+                    {plan.features.map((feat) => (
+                      <li key={feat} className="flex items-start gap-2">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-400 shrink-0 mt-0.5" />
+                        <span>{feat}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedPlanId(isSelected ? null : plan.id)}
+                  className={`w-full py-2 px-3 text-xs font-semibold rounded-lg cursor-pointer ${
+                    isCurrent
+                      ? 'border border-emerald-700 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40'
+                      : 'bg-emerald-700 text-white hover:bg-emerald-800'
+                  }`}
+                >
+                  {isCurrent ? 'Extend Plan via M-Pesa' : isSelected ? 'Hide M-Pesa Checkout' : `Upgrade to ${plan.name}`}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Inline M-Pesa STK Push Checkout Form */}
+        {selectedPlanId && (
+          <form
+            onSubmit={handleInitiateMpesaUpgrade}
+            className="p-4 rounded-xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50/40 dark:bg-emerald-950/20 space-y-3"
+          >
+            <div className="flex items-center gap-2 text-xs font-semibold text-emerald-900 dark:text-emerald-200">
+              <Smartphone className="w-4 h-4" />
+              <span>
+                Lipa Na M-Pesa STK Push —{' '}
+                {plans.find((p) => p.id === selectedPlanId)?.name} (KES{' '}
+                {plans.find((p) => p.id === selectedPlanId)?.amountKes})
+              </span>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <input
+                type="tel"
+                required
+                value={mpesaPhone}
+                onChange={(e) => setMpesaPhone(e.target.value)}
+                placeholder="Safaricom M-Pesa number (e.g. 0712345678 or 254712345678)"
+                className="flex-1 px-3.5 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950"
+              />
+              <button
+                type="submit"
+                disabled={initiatingStk}
+                className="inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg bg-emerald-700 text-white hover:bg-emerald-800 disabled:opacity-50 shrink-0 cursor-pointer"
+              >
+                {initiatingStk ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Smartphone className="w-3.5 h-3.5" />}
+                {initiatingStk ? 'Sending Prompt...' : 'Send M-Pesa Prompt'}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* Active Pending STK Push Tracker */}
+        {pendingCheckoutId && (
+          <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 flex flex-wrap items-center justify-between gap-3">
+            <div className="text-xs space-y-0.5">
+              <p className="font-semibold text-slate-900 dark:text-white">
+                Waiting for M-Pesa PIN confirmation...
+              </p>
+              <p className="text-slate-500 font-mono text-[11px]">
+                Checkout ID: {pendingCheckoutId}
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={checkingPayment}
+              onClick={() => handleQueryCheckoutStatus(pendingCheckoutId, false)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-lg bg-slate-900 dark:bg-white text-white dark:text-slate-900 disabled:opacity-50 cursor-pointer"
+            >
+              {checkingPayment ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+              Verify Payment Status
+            </button>
+          </div>
+        )}
+
+        {/* Recent M-Pesa Transactions */}
+        {transactions.length > 0 && (
+          <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <h4 className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+              Recent M-Pesa Transactions
+            </h4>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left">
+                <thead>
+                  <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500">
+                    <th className="py-2 pr-3 font-medium">Plan</th>
+                    <th className="py-2 pr-3 font-medium">Amount</th>
+                    <th className="py-2 pr-3 font-medium">Phone</th>
+                    <th className="py-2 pr-3 font-medium">Receipt / Ref</th>
+                    <th className="py-2 font-medium">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {transactions.map((tx) => (
+                    <tr key={tx.id}>
+                      <td className="py-2 pr-3 font-medium">{tx.planName}</td>
+                      <td className="py-2 pr-3 font-mono">KES {tx.amountKes}</td>
+                      <td className="py-2 pr-3 font-mono text-slate-500">{tx.phoneMasked}</td>
+                      <td className="py-2 pr-3 font-mono text-slate-500">
+                        {tx.mpesaReceiptNumber || tx.checkoutRequestId.slice(0, 16)}
+                      </td>
+                      <td className="py-2">
+                        <span
+                          className={`inline-block px-2 py-0.5 rounded text-[11px] font-semibold capitalize ${
+                            tx.status === 'completed'
+                              ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                              : tx.status === 'pending'
+                                ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                                : 'bg-red-100 text-red-800 dark:bg-red-950/60 dark:text-red-300'
+                          }`}
+                        >
+                          {tx.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Profile Form */}

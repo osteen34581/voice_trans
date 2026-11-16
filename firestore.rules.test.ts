@@ -30,6 +30,11 @@ describe('Firestore Security Rules & Blueprint Invariants', () => {
     expect(rules).toMatch(/incoming\(\)\.rawText == existing\(\)\.rawText/);
   });
 
+  it('forbids client-side writes to subscriptions and paymentTransactions (server-reconciled M-Pesa only)', () => {
+    expect(rules).toMatch(/match \/subscriptions\/\{userId\}[\s\S]*allow create, update, delete: if false;/);
+    expect(rules).toMatch(/match \/paymentTransactions\/\{transactionId\}[\s\S]*allow create, update, delete: if false;/);
+  });
+
   it('defines rules for every top-level collection declared in firebase-blueprint.json', () => {
     const collections = Object.keys(blueprint.firestore || {}).map((p) => p.split('/')[1]);
     for (const col of collections) {

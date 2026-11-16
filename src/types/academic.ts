@@ -307,3 +307,49 @@ export interface SystemSetting {
   updatedBy?: string;
   updatedAt?: unknown;
 }
+
+export type SubscriptionTier = 'free' | 'scholar_monthly' | 'semester_pro';
+
+export interface PremiumPlanInfo {
+  id: Exclude<SubscriptionTier, 'free'>;
+  name: string;
+  billingLabel: string;
+  amountKes: number;
+  durationDays: number;
+  recordingMinutesLimit: number;
+  aiMessagesPerDayLimit: number;
+  storageLimitMb: number;
+  features: string[];
+}
+
+export interface UserSubscription {
+  userId: string;
+  tier: SubscriptionTier;
+  planName: string;
+  status: 'active' | 'expired';
+  recordingMinutesLimit: number;
+  aiMessagesPerDayLimit: number;
+  storageLimitMb: number;
+  lastReceiptNumber?: string;
+  lastTransactionId?: string;
+  expiresAt?: string;
+  updatedAt?: unknown;
+}
+
+export interface PaymentTransaction {
+  id: string;
+  userId: string;
+  planId: Exclude<SubscriptionTier, 'free'>;
+  planName: string;
+  amountKes: number;
+  phoneMasked: string;
+  merchantRequestId?: string;
+  checkoutRequestId: string;
+  mpesaReceiptNumber?: string;
+  status: 'pending' | 'completed' | 'failed' | 'cancelled';
+  resultCode?: number;
+  resultDesc?: string;
+  environment: 'sandbox' | 'production';
+  createdAt?: string;
+  updatedAt?: string;
+}

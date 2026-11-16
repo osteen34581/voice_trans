@@ -17,6 +17,13 @@ import {
   downsampleFloat32,
   float32ToPcm16Base64,
 } from '../lib/audioPcm';
+import {
+  buildDarajaPassword,
+  formatDarajaTimestamp,
+  maskKenyanPhone,
+  normalizeKenyanPhone,
+  parseDarajaCallbackPayload,
+} from '../server/services/mpesaDaraja';
 
 describe('Academic Document & Audio Utilities', () => {
   it('chunks long academic text into overlapping excerpts with sequential indices', () => {
@@ -103,5 +110,43 @@ describe('Academic Document & Audio Utilities', () => {
     const decoded = base64Pcm24kToFloat32(b64);
     expect(decoded.length).toBe(160);
     expect(decoded[4]).toBeCloseTo(downsampled[4], 2);
+  });
+
+  it('normalizes Kenyan M-Pesa phone numbers, masks digits, builds Daraja passwords, and parses STK callbacks', () => {
+    expect(normalizeKenyanPhone('0712345678')).toBe('254712345678');
+    expect(normalizeKenyanPhone('+254 112 345 678')).toBe('254112345678');
+    expect(() => normalizeKenyanPhone('12345')).toThrow(/valid Kenyan M-Pesa phone/);
+    expect(maskKenyanPhone('254712345678')).toBe('25471****678');
+
+    const ts = formatDarajaTimestamp(new Date('2026-11-16T10:00:00Z'));
+    expect(ts).toBe('20261116130000');
+    expect(buildDarajaPassword('174379', 'passkey', ts)).toBe(
+      Buffer.from('174379passkey20261116130000', 'utf8').toString('base64'),
+    );
+
+    const parsed = parseDarajaCallbackPayload({
+      Body: {
+        stkCallback: {
+          MerchantRequestID: 'mr_1',
+          CheckoutRequestID: 'ws_CO_12345',
+          ResultCode: 0,
+          ResultDesc: 'The service request is processed successfully.',
+          CallbackMetadata: {
+            Item: [
+              { Name: 'Amount', Value: 350 },
+              { Name: 'MpesaReceiptNumber', Value: 'SLK91ABC23' },
+            ],
+          },
+        },
+      },
+    });
+    expect(parsed).toEqual({
+      merchantRequestId: 'mr_1',
+      checkoutRequestId: 'ws_CO_12345',
+      resultCode: 0,
+      resultDesc: 'The service request is processed successfully.',
+      mpesaReceiptNumber: 'SLK91ABC23',
+      amountPaid: 350,
+    });
   });
 });

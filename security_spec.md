@@ -21,3 +21,4 @@
 10. **Query Trust Bypass**: Student A runs an unfiltered `list` query on `/lectures` without `where('userId', '==', uid)`. -> **DENIED** by rule evaluating `resource.data.userId == request.auth.uid`.
 11. **Transcript Overwrite Tampering**: Client tries to overwrite `rawText` on a `Transcript` update or exceed string size bounds. -> **DENIED** by `affectedKeys().hasOnly(['editedText', 'updatedAt'])`.
 12. **Audit Log Forgery**: Non-admin attempts to read or delete `/auditLogs/log1`. -> **DENIED** by `isAdmin()`.
+13. **Client Payment / Tier Spoofing**: Student attempts to directly create or update `/subscriptions/studentA` (`tier: "semester_pro"`) or `/paymentTransactions/tx1` from the client SDK. -> **DENIED** (`allow create, update, delete: if false;` — strictly server-side via verified M-Pesa Daraja reconciliation).

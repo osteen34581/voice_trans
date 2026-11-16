@@ -6,10 +6,21 @@ import path from 'path';
 import multer from 'multer';
 import { z } from 'zod';
 import { createServer as createViteServer } from 'vite';
+import { FieldValue } from 'firebase-admin/firestore';
 import { getServerConfig } from './src/server/config.ts';
+import { adminDb } from './src/server/firebase-admin.ts';
 import { requireAuth, requireAdmin, rateLimit, type AuthRequest } from './src/server/middleware/auth.ts';
 import { aiProvider, type QuizQuestionItem } from './src/server/ai/provider.ts';
 import { attachLiveVoiceWebSocket } from './src/server/ai/liveBridge.ts';
+import {
+  PREMIUM_PLANS,
+  getDarajaConfig,
+  initiateMpesaStkPush,
+  isMpesaConfigured,
+  parseDarajaCallbackPayload,
+  queryMpesaStkPushStatus,
+  verifyWebhookSecret,
+} from './src/server/services/mpesaDaraja.ts';
 import {
   savePrivateAudio,
   findPrivateAudio,
@@ -532,6 +543,296 @@ app.post('/api/ai/generate-flashcards', requireAuth, rateLimit(12, 60_000), asyn
   } catch (error) {
     console.error('Flashcard generation error:', error);
     res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to generate flashcards.' });
+  }
+});
+
+// M-Pesa Daraja Payment Integration & Subscription Tier Management
+function toSafeTxDocId(checkoutRequestId: string): string {
+  return checkoutRequestId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 128);
+}
+
+async function activateSubscriptionForTx(params: {
+  userId: string;
+  planId: 'scholar_monthly' | 'semester_pro';
+  txDocId: string;
+  receiptNumber?: string;
+}) {
+  const plan = PREMIUM_PLANS[params.planId];
+  if (!plan) return;
+
+  const subRef = adminDb.collection('subscriptions').doc(params.userId);
+  const existingSub = await subRef.get().catch(() => null);
+  const existingExp = existingSub?.exists ? (existingSub.data()?.expiresAt as string | undefined) : undefined;
+  const baseMs =
+    existingExp && Date.parse(existingExp) > Date.now() ? Date.parse(existingExp) : Date.now();
+  const expiresAt = new Date(baseMs + plan.durationDays * 24 * 60 * 60 * 1000).toISOString();
+
+  await subRef.set({
+    userId: params.userId,
+    tier: plan.id,
+    planName: plan.name,
+    status: 'active',
+    recordingMinutesLimit: plan.recordingMinutesLimit,
+    aiMessagesPerDayLimit: plan.aiMessagesPerDayLimit,
+    storageLimitMb: plan.storageLimitMb,
+    lastReceiptNumber: params.receiptNumber || '',
+    lastTransactionId: params.txDocId,
+    expiresAt,
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+
+  const notifId = `notif_mpesa_${Date.now()}`;
+  await adminDb.collection('notifications').doc(notifId).set({
+    userId: params.userId,
+    type: 'system',
+    title: `${plan.name} Activated`,
+    message: `M-Pesa payment confirmed${params.receiptNumber ? ` (Receipt ${params.receiptNumber})` : ''}. Your workspace limits have been upgraded.`,
+    read: false,
+    linkTab: 'settings',
+    createdAt: FieldValue.serverTimestamp(),
+  });
+}
+
+app.get('/api/payments/plans', requireAuth, (_req: AuthRequest, res) => {
+  const daraja = getDarajaConfig();
+  res.json({
+    mpesaConfigured: isMpesaConfigured(),
+    environment: daraja.environment,
+    plans: Object.values(PREMIUM_PLANS),
+  });
+});
+
+app.get('/api/payments/status', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const uid = req.user!.uid;
+    const [subSnap, txSnap] = await Promise.all([
+      adminDb.collection('subscriptions').doc(uid).get(),
+      adminDb.collection('paymentTransactions').where('userId', '==', uid).get(),
+    ]);
+
+    const subscription = subSnap.exists ? subSnap.data() : null;
+    const transactions = txSnap.docs
+      .map((d) => {
+        const data = d.data();
+        const createdIso =
+          data.createdAt && typeof data.createdAt.toDate === 'function'
+            ? data.createdAt.toDate().toISOString()
+            : typeof data.createdAt === 'string'
+              ? data.createdAt
+              : '';
+        const updatedIso =
+          data.updatedAt && typeof data.updatedAt.toDate === 'function'
+            ? data.updatedAt.toDate().toISOString()
+            : typeof data.updatedAt === 'string'
+              ? data.updatedAt
+              : '';
+        return {
+          id: d.id,
+          userId: data.userId,
+          planId: data.planId,
+          planName: data.planName,
+          amountKes: data.amountKes,
+          phoneMasked: data.phoneMasked,
+          merchantRequestId: data.merchantRequestId || '',
+          checkoutRequestId: data.checkoutRequestId,
+          mpesaReceiptNumber: data.mpesaReceiptNumber || '',
+          status: data.status,
+          resultCode: data.resultCode,
+          resultDesc: data.resultDesc || '',
+          environment: data.environment || 'sandbox',
+          createdAt: createdIso,
+          updatedAt: updatedIso,
+        };
+      })
+      .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
+      .slice(0, 15);
+
+    res.json({ subscription, transactions });
+  } catch (error) {
+    console.error('Payment status error:', error);
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Unable to fetch billing status.' });
+  }
+});
+
+const mpesaStkSchema = z.object({
+  planId: z.enum(['scholar_monthly', 'semester_pro']),
+  phoneNumber: z.string().min(9).max(20),
+});
+
+app.post('/api/payments/mpesa/stk-push', requireAuth, rateLimit(6, 60_000), async (req: AuthRequest, res) => {
+  try {
+    const parsed = mpesaStkSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid upgrade request.' });
+      return;
+    }
+
+    const uid = req.user!.uid;
+    const plan = PREMIUM_PLANS[parsed.data.planId];
+    const daraja = getDarajaConfig();
+
+    const appBase =
+      process.env.APP_URL && process.env.APP_URL !== 'MY_APP_URL'
+        ? process.env.APP_URL.replace(/\/+$/, '')
+        : `${req.protocol}://${req.get('host')}`;
+    const callbackUrl = daraja.webhookSecret
+      ? `${appBase}/api/payments/mpesa/callback?secret=${encodeURIComponent(daraja.webhookSecret)}`
+      : `${appBase}/api/payments/mpesa/callback`;
+
+    const stk = await initiateMpesaStkPush({
+      plan,
+      phoneNumber: parsed.data.phoneNumber,
+      callbackUrl,
+      accountRef: `AA_${uid.slice(0, 8)}`,
+    });
+
+    const txDocId = toSafeTxDocId(stk.checkoutRequestId);
+    await adminDb.collection('paymentTransactions').doc(txDocId).set({
+      userId: uid,
+      planId: plan.id,
+      planName: plan.name,
+      amountKes: plan.amountKes,
+      phoneMasked: stk.phoneMasked,
+      merchantRequestId: stk.merchantRequestId,
+      checkoutRequestId: stk.checkoutRequestId,
+      mpesaReceiptNumber: '',
+      status: 'pending',
+      resultCode: 0,
+      resultDesc: stk.responseDescription,
+      environment: stk.environment,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    res.json({
+      transactionId: txDocId,
+      checkoutRequestId: stk.checkoutRequestId,
+      merchantRequestId: stk.merchantRequestId,
+      customerMessage: stk.customerMessage,
+      amountKes: plan.amountKes,
+      planId: plan.id,
+      phoneMasked: stk.phoneMasked,
+    });
+  } catch (error) {
+    console.error('M-Pesa STK Push error:', error);
+    res.status(400).json({ error: error instanceof Error ? error.message : 'Failed to initiate M-Pesa payment.' });
+  }
+});
+
+const mpesaQuerySchema = z.object({
+  checkoutRequestId: z.string().min(4).max(128),
+});
+
+app.post('/api/payments/mpesa/query', requireAuth, rateLimit(20, 60_000), async (req: AuthRequest, res) => {
+  try {
+    const parsed = mpesaQuerySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Invalid CheckoutRequestID.' });
+      return;
+    }
+
+    const uid = req.user!.uid;
+    const txDocId = toSafeTxDocId(parsed.data.checkoutRequestId);
+    const txRef = adminDb.collection('paymentTransactions').doc(txDocId);
+    const txSnap = await txRef.get();
+
+    if (!txSnap.exists || txSnap.data()?.userId !== uid) {
+      res.status(404).json({ error: 'Transaction not found for this account.' });
+      return;
+    }
+
+    const txData = txSnap.data()!;
+    if (txData.status === 'completed') {
+      res.json({ status: 'completed', resultDesc: txData.resultDesc || 'Payment confirmed.' });
+      return;
+    }
+
+    const status = await queryMpesaStkPushStatus(parsed.data.checkoutRequestId);
+    if (status.pending) {
+      res.json({ status: 'pending', resultDesc: status.resultDesc });
+      return;
+    }
+
+    const nextStatus = status.succeeded ? 'completed' : status.cancelled ? 'cancelled' : 'failed';
+    await txRef.update({
+      status: nextStatus,
+      resultCode: Number(status.resultCode) || -1,
+      resultDesc: status.resultDesc.slice(0, 300),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    if (nextStatus === 'completed') {
+      await activateSubscriptionForTx({
+        userId: uid,
+        planId: txData.planId,
+        txDocId,
+        receiptNumber: txData.mpesaReceiptNumber || undefined,
+      });
+    }
+
+    res.json({
+      status: nextStatus,
+      resultDesc: status.resultDesc,
+    });
+  } catch (error) {
+    console.error('M-Pesa query error:', error);
+    res.status(400).json({ error: error instanceof Error ? error.message : 'Unable to query M-Pesa status.' });
+  }
+});
+
+app.post('/api/payments/mpesa/callback', async (req, res) => {
+  try {
+    const providedSecret =
+      (typeof req.query.secret === 'string' ? req.query.secret : undefined) ||
+      req.header('x-webhook-secret') ||
+      undefined;
+
+    if (!verifyWebhookSecret(providedSecret)) {
+      res.status(403).json({ ResultCode: 1, ResultDesc: 'Forbidden' });
+      return;
+    }
+
+    const parsed = parseDarajaCallbackPayload(req.body);
+    if (!parsed) {
+      res.status(400).json({ ResultCode: 1, ResultDesc: 'Invalid callback payload' });
+      return;
+    }
+
+    const txDocId = toSafeTxDocId(parsed.checkoutRequestId);
+    const txRef = adminDb.collection('paymentTransactions').doc(txDocId);
+    const txSnap = await txRef.get();
+
+    if (!txSnap.exists) {
+      res.json({ ResultCode: 0, ResultDesc: 'Accepted' });
+      return;
+    }
+
+    const txData = txSnap.data()!;
+    const alreadyCompleted = txData.status === 'completed';
+    const nextStatus =
+      parsed.resultCode === 0 ? 'completed' : parsed.resultCode === 1032 ? 'cancelled' : 'failed';
+
+    await txRef.update({
+      status: nextStatus,
+      resultCode: parsed.resultCode,
+      resultDesc: parsed.resultDesc.slice(0, 300),
+      mpesaReceiptNumber: parsed.mpesaReceiptNumber || txData.mpesaReceiptNumber || '',
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    if (nextStatus === 'completed' && !alreadyCompleted) {
+      await activateSubscriptionForTx({
+        userId: txData.userId,
+        planId: txData.planId,
+        txDocId,
+        receiptNumber: parsed.mpesaReceiptNumber,
+      });
+    }
+
+    res.json({ ResultCode: 0, ResultDesc: 'Callback processed successfully' });
+  } catch (error) {
+    console.error('M-Pesa callback error:', error);
+    res.status(500).json({ ResultCode: 1, ResultDesc: 'Internal callback processing error' });
   }
 });
 
