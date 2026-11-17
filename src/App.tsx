@@ -65,7 +65,7 @@ function sortDescByTime<T extends { updatedAt?: unknown; createdAt?: unknown }>(
 }
 
 function WorkspaceApp() {
-  const { user, profile, systemSettings, isAdmin, loading, logout } = useAuth();
+  const { user, profile, systemSettings, isAdmin, loading, refreshSession, logout } = useAuth();
   const { notify } = useToast();
 
   const [authModalMode, setAuthModalMode] = useState<'signin' | 'register' | null>(null);
@@ -73,6 +73,7 @@ function WorkspaceApp() {
   const [selectedLectureId, setSelectedLectureId] = useState<string | null>(null);
   const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null);
   const [resendingEmail, setResendingEmail] = useState(false);
+  const [checkingVerification, setCheckingVerification] = useState(false);
 
   // Real-time user-scoped Firestore state
   const [units, setUnits] = useState<StudentUnit[]>([]);
@@ -177,7 +178,7 @@ function WorkspaceApp() {
     ];
 
     return () => unsubs.forEach((u) => u());
-  }, [user]);
+  }, [user, user?.emailVerified]);
 
   const mergedResourcesMap = new Map<string, RevisionResource>();
   for (const r of approvedResources) mergedResourcesMap.set(r.id, r);
@@ -232,18 +233,30 @@ function WorkspaceApp() {
           <div className="flex flex-col gap-2 pt-2">
             <button
               type="button"
+              disabled={checkingVerification}
               onClick={async () => {
-                await user.reload();
-                if (user.emailVerified) {
-                  window.location.reload();
-                } else {
-                  notify('Not verified yet', 'Open the verification email first, then click refresh.', 'info');
+                setCheckingVerification(true);
+                try {
+                  const verified = await refreshSession();
+                  if (verified) {
+                    notify('Email verified', 'Your academic workspace is now unlocked.', 'success');
+                  } else {
+                    notify('Not verified yet', 'Open the verification email first, then click refresh.', 'info');
+                  }
+                } catch (err) {
+                  notify(
+                    'Could not verify session',
+                    err instanceof Error ? err.message : 'Please try signing in again.',
+                    'error',
+                  );
+                } finally {
+                  setCheckingVerification(false);
                 }
               }}
-              className="inline-flex items-center justify-center gap-2 py-2.5 px-4 text-xs font-semibold rounded-lg bg-emerald-700 text-white hover:bg-emerald-800 cursor-pointer"
+              className="inline-flex items-center justify-center gap-2 py-2.5 px-4 text-xs font-semibold rounded-lg bg-emerald-700 text-white hover:bg-emerald-800 disabled:opacity-60 cursor-pointer"
             >
-              <RefreshCw className="w-3.5 h-3.5" />
-              I Verified — Refresh Session
+              <RefreshCw className={`w-3.5 h-3.5 ${checkingVerification ? 'animate-spin' : ''}`} />
+              {checkingVerification ? 'Checking Verification...' : 'I Verified — Refresh Session'}
             </button>
             <button
               type="button"

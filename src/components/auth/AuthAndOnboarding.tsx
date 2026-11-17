@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { CheckCircle2, GraduationCap, Shield, X } from 'lucide-react';
+import { Check, CheckCircle2, Copy, GraduationCap, Shield, X } from 'lucide-react';
+import firebaseConfig from '../../../firebase-applet-config.json';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../ui/ToastContext';
 import {
@@ -17,6 +18,85 @@ interface AuthModalProps {
   onClose: () => void;
 }
 
+interface ParsedAuthError {
+  message: string;
+  unauthorizedHost?: string;
+}
+
+function parseFirebaseAuthError(err: unknown, fallback: string): ParsedAuthError {
+  const code =
+    typeof err === 'object' && err !== null && 'code' in err
+      ? String((err as { code?: unknown }).code || '')
+      : '';
+  const rawMessage = err instanceof Error ? err.message : fallback;
+  const combined = `${code} ${rawMessage}`.toLowerCase();
+  const currentHost =
+    typeof window !== 'undefined' && window.location?.hostname
+      ? window.location.hostname
+      : '';
+
+  if (combined.includes('unauthorized-domain')) {
+    return {
+      message: `This domain (${currentHost || 'current host'}) is not yet authorized in Firebase Authentication for project "${firebaseConfig.projectId}". Add it in Firebase Console → Authentication → Settings → Authorized domains, then retry.`,
+      unauthorizedHost: currentHost || undefined,
+    };
+  }
+  if (combined.includes('operation-not-allowed')) {
+    return {
+      message:
+        'Email/Password sign-in is disabled in Firebase Console. Use "Continue with Google" above, or enable Email/Password under Firebase Console → Authentication → Sign-in method.',
+    };
+  }
+  if (combined.includes('popup-blocked')) {
+    return {
+      message:
+        'Your browser blocked the Google sign-in popup. Allow popups for this site and click "Continue with Google" again.',
+    };
+  }
+  if (
+    combined.includes('popup-closed-by-user') ||
+    combined.includes('cancelled-popup-request')
+  ) {
+    return {
+      message:
+        'The Google sign-in popup was closed before completing sign-in. Click "Continue with Google" to try again.',
+    };
+  }
+  if (
+    combined.includes('invalid-credential') ||
+    combined.includes('wrong-password') ||
+    combined.includes('user-not-found')
+  ) {
+    return {
+      message:
+        'Invalid email or password. Check your credentials, reset your password, or sign in with Google.',
+    };
+  }
+  if (combined.includes('email-already-in-use')) {
+    return {
+      message:
+        'An account already exists with this email address. Switch to Sign In or use "Continue with Google".',
+    };
+  }
+  if (combined.includes('weak-password')) {
+    return {
+      message: 'Password is too weak. Use at least 6 characters.',
+    };
+  }
+  if (combined.includes('too-many-requests')) {
+    return {
+      message: 'Too many authentication attempts. Please wait a few minutes and try again.',
+    };
+  }
+  if (combined.includes('network-request-failed')) {
+    return {
+      message: 'Network error reaching Firebase Authentication. Check your connection and retry.',
+    };
+  }
+
+  return { message: rawMessage || fallback };
+}
+
 export function AuthModal({ initialMode, onClose }: AuthModalProps) {
   const { signInWithGoogle, signInEmail, registerEmail, requestPasswordReset, systemSettings } =
     useAuth();
@@ -26,17 +106,35 @@ export function AuthModal({ initialMode, onClose }: AuthModalProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [authError, setAuthError] = useState<ParsedAuthError | null>(null);
+  const [copiedHost, setCopiedHost] = useState(false);
+
+  const switchMode = (next: 'signin' | 'register' | 'reset') => {
+    setAuthError(null);
+    setCopiedHost(false);
+    setMode(next);
+  };
+
+  const handleCopyHost = async (host: string) => {
+    try {
+      await navigator.clipboard.writeText(host);
+      setCopiedHost(true);
+      notify('Domain copied', `${host} copied to clipboard.`, 'info');
+      setTimeout(() => setCopiedHost(false), 2500);
+    } catch {
+      notify('Copy failed', `Copy this hostname manually: ${host}`, 'info');
+    }
+  };
 
   const handleGoogle = async () => {
-    setErrorMsg(null);
+    setAuthError(null);
     setSubmitting(true);
     try {
       await signInWithGoogle();
       notify('Signed in successfully', 'Welcome to your academic workspace.', 'success');
       onClose();
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : 'Google sign-in failed.');
+      setAuthError(parseFirebaseAuthError(err, 'Google sign-in failed.'));
     } finally {
       setSubmitting(false);
     }
@@ -44,18 +142,22 @@ export function AuthModal({ initialMode, onClose }: AuthModalProps) {
 
   const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setErrorMsg(null);
+    setAuthError(null);
     setSubmitting(true);
     try {
+      const cleanEmail = email.trim();
+      if (!cleanEmail) {
+        throw new Error('Please enter a valid email address.');
+      }
       if (mode === 'reset') {
-        await requestPasswordReset(email);
+        await requestPasswordReset(cleanEmail);
         notify('Password reset email sent', 'Check your inbox for reset instructions.', 'success');
-        setMode('signin');
+        switchMode('signin');
       } else if (mode === 'register') {
-        if (!fullName.trim()) {
-          throw new Error('Please enter your full name.');
+        if (fullName.trim().length < 2) {
+          throw new Error('Please enter your full name (at least 2 characters).');
         }
-        await registerEmail(fullName.trim(), email.trim(), password);
+        await registerEmail(fullName.trim(), cleanEmail, password);
         notify(
           'Account created',
           'Check your email to verify your address, or use Google Sign-In for instant access.',
@@ -63,19 +165,12 @@ export function AuthModal({ initialMode, onClose }: AuthModalProps) {
         );
         onClose();
       } else {
-        await signInEmail(email.trim(), password);
+        await signInEmail(cleanEmail, password);
         notify('Welcome back', 'Signed in to your workspace.', 'success');
         onClose();
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Authentication error.';
-      if (msg.includes('operation-not-allowed')) {
-        setErrorMsg(
-          'Email/Password provider is not yet enabled in Firebase Console. Please use "Continue with Google" below for immediate verified access, or enable Email/Password in Firebase Console > Authentication > Sign-in method.',
-        );
-      } else {
-        setErrorMsg(msg);
-      }
+      setAuthError(parseFirebaseAuthError(err, 'Authentication error.'));
     } finally {
       setSubmitting(false);
     }
@@ -99,7 +194,7 @@ export function AuthModal({ initialMode, onClose }: AuthModalProps) {
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
               {mode === 'register'
-                ? 'Continue with Google or register with your university email.'
+                ? 'Continue with Google for instant verified access, or register with email.'
                 : 'Access your lectures, transcripts, notes, and AI tutor.'}
             </p>
           </div>
@@ -117,7 +212,7 @@ export function AuthModal({ initialMode, onClose }: AuthModalProps) {
           type="button"
           disabled={submitting}
           onClick={handleGoogle}
-          className="w-full py-2.5 px-4 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-semibold flex items-center justify-center gap-2.5 transition-colors cursor-pointer"
+          className="w-full py-2.5 px-4 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-semibold flex items-center justify-center gap-2.5 transition-colors cursor-pointer disabled:opacity-60"
         >
           <span className="w-4 h-4 rounded-full bg-emerald-700 text-white text-[10px] font-bold flex items-center justify-center">
             G
@@ -125,17 +220,32 @@ export function AuthModal({ initialMode, onClose }: AuthModalProps) {
           Continue with Google (Recommended)
         </button>
 
+        {authError && (
+          <div className="p-3 rounded-lg bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 text-xs text-red-700 dark:text-red-300 space-y-2">
+            <p className="leading-relaxed">{authError.message}</p>
+            {authError.unauthorizedHost && (
+              <div className="flex items-center justify-between gap-2 pt-1 border-t border-red-200/70 dark:border-red-900/70">
+                <code className="font-mono text-[11px] truncate select-all">
+                  {authError.unauthorizedHost}
+                </code>
+                <button
+                  type="button"
+                  onClick={() => handleCopyHost(authError.unauthorizedHost!)}
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded bg-white dark:bg-slate-900 border border-red-200 dark:border-red-800 text-[11px] font-semibold shrink-0 cursor-pointer hover:bg-red-100/50 dark:hover:bg-red-900/40"
+                >
+                  {copiedHost ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                  {copiedHost ? 'Copied' : 'Copy domain'}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="relative flex items-center py-1">
           <div className="flex-grow border-t border-slate-200 dark:border-slate-800" />
           <span className="shrink mx-3 text-xs text-slate-400">or with email</span>
           <div className="flex-grow border-t border-slate-200 dark:border-slate-800" />
         </div>
-
-        {errorMsg && (
-          <div className="p-3 rounded-lg bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 text-xs text-red-700 dark:text-red-300">
-            {errorMsg}
-          </div>
-        )}
 
         <form onSubmit={handleEmailSubmit} className="space-y-3.5">
           {mode === 'register' && (
@@ -205,14 +315,14 @@ export function AuthModal({ initialMode, onClose }: AuthModalProps) {
             <>
               <button
                 type="button"
-                onClick={() => setMode('register')}
+                onClick={() => switchMode('register')}
                 className="hover:text-emerald-700 dark:hover:text-emerald-400 cursor-pointer"
               >
                 Need an account? Register
               </button>
               <button
                 type="button"
-                onClick={() => setMode('reset')}
+                onClick={() => switchMode('reset')}
                 className="hover:text-emerald-700 dark:hover:text-emerald-400 cursor-pointer"
               >
                 Forgot password?
@@ -221,7 +331,7 @@ export function AuthModal({ initialMode, onClose }: AuthModalProps) {
           ) : (
             <button
               type="button"
-              onClick={() => setMode('signin')}
+              onClick={() => switchMode('signin')}
               className="hover:text-emerald-700 dark:hover:text-emerald-400 cursor-pointer"
             >
               Already registered? Sign in

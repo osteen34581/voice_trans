@@ -36,6 +36,7 @@ interface AuthContextValue {
   signInEmail: (email: string, password: string) => Promise<void>;
   registerEmail: (fullName: string, email: string, password: string) => Promise<void>;
   requestPasswordReset: (email: string) => Promise<void>;
+  refreshSession: () => Promise<boolean>;
   logout: () => Promise<void>;
   saveOnboardingProfile: (data: Partial<UserProfile>, recordingConsent: boolean) => Promise<void>;
   updatePrivateSettings: (patch: Partial<UserPrivateSettings>) => Promise<void>;
@@ -60,6 +61,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [systemSettings, setSystemSettings] = useState<SystemSetting>(DEFAULT_SYSTEM_SETTINGS);
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [sessionEpoch, setSessionEpoch] = useState(0);
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined') {
       const saved = window.localStorage.getItem('aa_theme');
@@ -133,9 +135,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const userRef = doc(db, 'users', firebaseUser.uid);
         const privateRef = doc(db, 'users', firebaseUser.uid, 'private', 'settings');
 
-        // Bootstrap user documents if missing and email is verified
-        const snap = await getDoc(userRef).catch(() => null);
-        if (!snap?.exists() && firebaseUser.emailVerified) {
+        // Bootstrap user documents only when verified and confirmable as non-existent
+        const snap = await getDoc(userRef);
+        if (!snap.exists() && firebaseUser.emailVerified) {
           await setDoc(userRef, {
             uid: firebaseUser.uid,
             fullName: (firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Student').slice(0, 120),
@@ -146,8 +148,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           });
         }
 
-        const privSnap = await getDoc(privateRef).catch(() => null);
-        if (!privSnap?.exists() && firebaseUser.emailVerified) {
+        const privSnap = await getDoc(privateRef);
+        if (!privSnap.exists() && firebaseUser.emailVerified) {
           await setDoc(privateRef, {
             userId: firebaseUser.uid,
             email: (firebaseUser.email || '').slice(0, 180),
@@ -201,7 +203,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (unsubProfile) unsubProfile();
       if (unsubPrivate) unsubPrivate();
     };
-  }, []);
+  }, [sessionEpoch]);
 
   const signInWithGoogle = useCallback(async () => {
     await signInWithPopup(auth, googleAuthProvider);
@@ -213,12 +215,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const registerEmail = useCallback(async (fullName: string, email: string, password: string) => {
     const cred = await createUserWithEmailAndPassword(auth, email, password);
-    await updateProfile(cred.user, { displayName: fullName });
-    await sendEmailVerification(cred.user).catch(() => {});
+    await updateProfile(cred.user, { displayName: fullName.slice(0, 120) });
+    await sendEmailVerification(cred.user).catch((err) => {
+      console.warn('Initial verification email send warning:', err);
+    });
   }, []);
 
   const requestPasswordReset = useCallback(async (email: string) => {
     await sendPasswordResetEmail(auth, email);
+  }, []);
+
+  const refreshSession = useCallback(async (): Promise<boolean> => {
+    const current = auth.currentUser;
+    if (!current) return false;
+    await current.reload();
+    await current.getIdToken(true);
+    setUser(auth.currentUser);
+    if (auth.currentUser?.emailVerified) {
+      setSessionEpoch((prev) => prev + 1);
+      return true;
+    }
+    return false;
   }, []);
 
   const logout = useCallback(async () => {
@@ -239,7 +256,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } else {
           await setDoc(ref, {
             userId: user.uid,
-            email: user.email || '',
+            email: (user.email || '').slice(0, 180),
             theme: patch.theme || 'light',
             language: patch.language || 'en-KE',
             notifyTranscription: patch.notifyTranscription ?? true,
@@ -341,6 +358,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         signInEmail,
         registerEmail,
         requestPasswordReset,
+        refreshSession,
         logout,
         saveOnboardingProfile,
         updatePrivateSettings,
